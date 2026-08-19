@@ -91,6 +91,13 @@
   #tip{position:fixed;pointer-events:none;opacity:0;transition:opacity .12s;background:var(--surface-1);border:1px solid var(--ring);border-radius:7px;padding:8px 11px;font-size:12.5px;box-shadow:0 6px 20px rgba(0,0,0,.14);z-index:9;max-width:250px}
   #tip b{display:block;margin-bottom:3px}
   .warnbox{border-left:3px solid var(--warn);padding:10px 14px;background:var(--plane);border-radius:6px;margin-top:14px;font-size:13px;color:var(--ink-2)}
+  .topbtns{display:flex;gap:8px;flex-shrink:0}
+  .btn.done{border-color:var(--good);color:var(--good-text)}
+  #share{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;padding:20px;z-index:20}
+  #share.on{display:flex}
+  #share .box{background:var(--surface-1);border:1px solid var(--ring);border-radius:var(--r);padding:20px;max-width:560px;width:100%}
+  #share textarea{width:100%;height:90px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+    border:1px solid var(--axis);border-radius:7px;padding:8px 10px;background:var(--plane);color:var(--ink);resize:vertical}
 </style>
 </head>
 <body>
@@ -101,7 +108,10 @@
       <h1>Which model should we run?</h1>
       <p class="sub">Enter what the job needs, what your hardware costs, and how each candidate scored on <em>your own</em> test set. This works out which model is cheapest among the ones that actually clear your bar — and what a request really costs once idle capacity is paid for.</p>
     </div>
-    <button class="btn" id="theme" title="Toggle light/dark">◑</button>
+    <div class="topbtns">
+      <button class="btn" id="copy" title="Copy a link that reopens this exact scenario">Copy link</button>
+      <button class="btn" id="theme" title="Toggle light/dark">◑</button>
+    </div>
   </div>
 
   <div class="card">
@@ -162,6 +172,15 @@
   </p>
 </div>
 <div id="tip"></div>
+<div id="share"><div class="box">
+  <h2 style="margin-bottom:8px">Link to this scenario</h2>
+  <p class="note" style="margin-top:0">Copy this and send it to a colleague, or keep it to reopen these figures later. Everything you typed is in the link itself — nothing is stored anywhere.</p>
+  <textarea id="shareUrl" readonly></textarea>
+  <div style="display:flex;gap:8px;margin-top:12px">
+    <button class="btn" id="shareCopy">Copy</button>
+    <button class="btn" id="shareClose">Close</button>
+  </div>
+</div></div>
 
 <script>
 const GPUS = [
@@ -411,8 +430,105 @@ $("theme").onclick = () => {
 ["volMonth","outTok","qBar","maxSec","gpuPrice","life","kwh","conc","ovh","pue","idle","vram","bw","tdp"]
   .forEach(id => $(id).oninput = render);
 
+// ---- The URL is the save file -------------------------------------------
+// Everything the user typed packs into the hash, so a scenario can be mailed
+// to a colleague or reopened next week. No storage APIs, no backend: if the
+// link travels, the numbers travel with it.
+const FIELDS = ["volMonth","outTok","qBar","maxSec","gpu","gpuPrice","life","kwh",
+                "conc","ovh","pue","idle","vram","bw","tdp"];
+// encodeURIComponent leaves ~ alone, and ~ is our field separator inside a model.
+const encName = s => encodeURIComponent(s).replace(/~/g,"%7E");
+
+function encodeState(){
+  const f = FIELDS.map(id => $(id).value).join(",");
+  const m = rows.map(r => [encName(r.name), r.p, r.q, r.score, r.tps ?? ""].join("~")).join("|");
+  return "v=1&f=" + f + "&m=" + m;
+}
+
+function shareUrl(){
+  return location.href.split("#")[0] + "#" + encodeState();
+}
+
+// Malformed or hand-edited hashes must never leave a half-applied form on
+// screen, so parse into a candidate state first and only then commit it.
+function applyState(hash){
+  const parts = {};
+  hash.replace(/^#/,"").split("&").forEach(kv=>{
+    const i = kv.indexOf("=");
+    if(i>0) parts[kv.slice(0,i)] = kv.slice(i+1);
+  });
+  if(parts.v !== "1" || !parts.f) return false;
+
+  const vals = parts.f.split(",");
+  if(vals.length !== FIELDS.length) return false;
+  if(vals.some(v => v==="" || !isFinite(parseFloat(v)))) return false;
+
+  let models = null;
+  if(parts.m){
+    models = parts.m.split("|").map(s=>{
+      const c = s.split("~");
+      if(c.length !== 5) return null;
+      const p = parseFloat(c[1]), q = parseInt(c[2],10), score = parseFloat(c[3]);
+      if(!isFinite(p) || !isFinite(score) || !(q>=0 && q<PREC.length)) return null;
+      const tps = c[4]==="" ? null : parseFloat(c[4]);
+      if(tps !== null && !isFinite(tps)) return null;
+      let name;
+      try { name = decodeURIComponent(c[0]); } catch(e) { return null; }
+      return {name, p, q, score, tps};
+    });
+    if(models.some(m=>!m) || !models.length) return false;
+  }
+
+  FIELDS.forEach((id,i) => { $(id).value = vals[i]; });
+  const gi = +vals[FIELDS.indexOf("gpu")];        // a GPU index we don't know -> Custom
+  $("gpu").value = (gi >= 0 && gi < GPUS.length) ? gi : GPUS.length-1;
+  if(models) rows = models;
+  drawRows(); render();
+  return true;
+}
+
+// Keep the address bar in step with the form, so the link is always current
+// whether it is copied from the button or straight out of the URL bar.
+function syncHash(){
+  try { history.replaceState(null, "", "#" + encodeState()); } catch(e) {}
+}
+
+const baseRender = render;
+render = function(){ baseRender(); syncHash(); };
+
+function copyText(text, btn, label){
+  const done = ok => {
+    btn.textContent = ok ? "Copied" : "Press ⌘/Ctrl-C";
+    btn.classList.toggle("done", ok);
+    setTimeout(()=>{ btn.textContent = label; btn.classList.remove("done"); }, 1800);
+  };
+  if(navigator.clipboard && location.protocol !== "file:"){
+    navigator.clipboard.writeText(text).then(()=>done(true), ()=>done(false));
+    return;
+  }
+  // file:// blocks the async clipboard in most browsers; the dialog's selected
+  // textarea is the fallback that always works.
+  const ta = $("shareUrl");
+  ta.focus(); ta.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch(e) {}
+  done(ok);
+}
+
+$("copy").onclick = () => {
+  $("shareUrl").value = shareUrl();
+  $("share").classList.add("on");
+  $("shareUrl").focus(); $("shareUrl").select();
+};
+$("shareCopy").onclick = e => copyText($("shareUrl").value, e.currentTarget, "Copy");
+$("shareClose").onclick = () => $("share").classList.remove("on");
+$("share").onclick = e => { if(e.target === $("share")) $("share").classList.remove("on"); };
+addEventListener("keydown", e => { if(e.key === "Escape") $("share").classList.remove("on"); });
+addEventListener("hashchange", () => { if(location.hash.length>1) applyState(location.hash); });
+
 if(matchMedia("(prefers-color-scheme: dark)").matches) document.documentElement.dataset.theme="dark";
-buildGpu(); drawRows(); render();
+buildGpu(); drawRows();
+if(!(location.hash.length>1 && applyState(location.hash))) render();
 </script>
 </body>
 </html>

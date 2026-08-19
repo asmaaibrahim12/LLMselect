@@ -45,7 +45,7 @@ If Claude Code has browser tools, ask it to screenshot the page after every visu
 
 Each of these is a session's work. Do them one at a time and check the numbers above still hold.
 
-1. **Save and reload.** A "copy link" button that packs the current inputs into the URL hash, so a startup can send their filled-in scenario to a colleague or reopen it next week. No storage APIs — the URL is the save file.
+1. ~~**Save and reload.**~~ *Done.* "Copy link" packs every input and candidate into the URL hash; opening such a link restores the scenario, and a malformed hash falls back to the defaults. No storage APIs — the URL is the save file.
 2. **Print / PDF layout.** These numbers end up in board decks. A `@media print` stylesheet that fits one page and drops the inputs.
 3. **Cost of getting it wrong.** A field for what a bad answer costs (a re-do, a refund, a complaint) and a column showing expected cost including errors at each model's accuracy. Often flips the recommendation toward the better model — and it is the argument a CTO actually needs for the budget conversation.
 4. **Shared hardware.** Right now each model is priced on its own box. Let several use cases share one GPU and split the cost between them by how much capacity each consumes. This is where the real savings are at low utilisation.
