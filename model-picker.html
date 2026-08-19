@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Which model should we run?</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1:#fcfcfb; --plane:#f9f9f7;
+    --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+    --grid:#e1e0d9; --axis:#c3c2b7; --ring:rgba(11,11,11,0.10);
+    --accent:#2a78d6; --accent-soft:#cde2fb;
+    --good:#0ca30c; --warn:#fab219; --crit:#d03b3b; --good-text:#006300;
+    --r:10px;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1:#1a1a19; --plane:#0d0d0d;
+    --ink:#ffffff; --ink-2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --axis:#383835; --ring:rgba(255,255,255,0.10);
+    --accent:#3987e5; --accent-soft:#184f95;
+    --good:#0ca30c; --warn:#fab219; --crit:#d03b3b; --good-text:#0ca30c;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--plane); color:var(--ink);
+    font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;
+    padding:28px 20px 60px;
+  }
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{font-size:26px;margin:0 0 6px;letter-spacing:-0.01em}
+  .sub{color:var(--ink-2);margin:0 0 26px;max-width:70ch}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:0 0 14px;font-weight:600}
+  .card{background:var(--surface-1);border:1px solid var(--ring);border-radius:var(--r);padding:20px;margin-bottom:18px}
+  .grid{display:grid;gap:14px 18px}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:760px){.g3,.g4{grid-template-columns:1fr 1fr}}
+  label{display:block;font-size:12px;color:var(--ink-2);margin-bottom:5px}
+  label .hint{color:var(--muted);font-weight:400}
+  input,select{
+    width:100%;padding:8px 10px;border:1px solid var(--axis);border-radius:7px;
+    background:var(--surface-1);color:var(--ink);font:inherit;font-size:14px;
+    font-variant-numeric:tabular-nums;
+  }
+  input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
+  table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;padding:0 10px 8px 0;white-space:nowrap}
+  td{padding:9px 10px 9px 0;border-top:1px solid var(--grid);vertical-align:middle}
+  td.num,th.num{text-align:right}
+  #cands td{padding:6px 8px 6px 0}
+  #cands input,#cands select{padding:6px 8px;font-size:13px}
+  .btn{
+    background:var(--surface-1);color:var(--ink);border:1px solid var(--axis);
+    border-radius:7px;padding:7px 13px;font:inherit;font-size:13px;cursor:pointer
+  }
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn.x{border:none;color:var(--muted);padding:4px 8px;font-size:16px;line-height:1}
+  .btn.x:hover{color:var(--crit)}
+  details{margin-top:14px;border-top:1px solid var(--grid);padding-top:12px}
+  summary{cursor:pointer;font-size:13px;color:var(--ink-2)}
+  summary:hover{color:var(--accent)}
+  .verdict{border:1px solid var(--ring);border-left:3px solid var(--accent);background:var(--surface-1);border-radius:var(--r);padding:20px 22px;margin-bottom:18px}
+  .verdict .kicker{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600}
+  .verdict .pick{font-size:26px;font-weight:650;margin:6px 0 4px;letter-spacing:-0.01em}
+  .verdict .why{color:var(--ink-2);max-width:75ch}
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:16px 0 0}
+  @media(max-width:640px){.tiles{grid-template-columns:1fr}}
+  .tile{border:1px solid var(--ring);border-radius:8px;padding:13px 15px;background:var(--plane)}
+  .tile .k{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+  .tile .v{font-size:23px;font-weight:600;margin-top:3px;letter-spacing:-0.01em}
+  .tile .n{font-size:12px;color:var(--ink-2);margin-top:2px}
+  .chart{margin-top:4px}
+  .row{display:grid;grid-template-columns:170px 1fr 118px;gap:12px;align-items:center;margin-bottom:9px}
+  @media(max-width:640px){.row{grid-template-columns:110px 1fr 96px;gap:8px}}
+  .row .nm{font-size:13px;color:var(--ink-2);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .track{background:var(--grid);border-radius:4px;height:22px;position:relative}
+  .bar{height:22px;border-radius:0 4px 4px 0;background:var(--accent);transition:width .18s ease}
+  .bar.out{background:var(--muted);opacity:.55}
+  .row .vl{font-size:13px;font-variant-numeric:tabular-nums;color:var(--ink)}
+  .tag{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;white-space:nowrap}
+  .tag.ok{color:var(--good-text);background:color-mix(in srgb,var(--good) 14%,transparent)}
+  .tag.no{color:var(--crit);background:color-mix(in srgb,var(--crit) 14%,transparent)}
+  .tag.est{color:var(--ink-2);background:color-mix(in srgb,var(--warn) 22%,transparent)}
+  .tag.meas{color:var(--good-text);background:color-mix(in srgb,var(--good) 12%,transparent)}
+  .note{font-size:12.5px;color:var(--muted);margin-top:14px;max-width:80ch}
+  .callout{background:var(--accent-soft);border-radius:8px;padding:14px 16px;margin-top:16px;font-size:14px;color:var(--ink)}
+  :root[data-theme="dark"] .callout{color:#fff}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+  #tip{position:fixed;pointer-events:none;opacity:0;transition:opacity .12s;background:var(--surface-1);border:1px solid var(--ring);border-radius:7px;padding:8px 11px;font-size:12.5px;box-shadow:0 6px 20px rgba(0,0,0,.14);z-index:9;max-width:250px}
+  #tip b{display:block;margin-bottom:3px}
+  .warnbox{border-left:3px solid var(--warn);padding:10px 14px;background:var(--plane);border-radius:6px;margin-top:14px;font-size:13px;color:var(--ink-2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <div>
+      <h1>Which model should we run?</h1>
+      <p class="sub">Enter what the job needs, what your hardware costs, and how each candidate scored on <em>your own</em> test set. This works out which model is cheapest among the ones that actually clear your bar — and what a request really costs once idle capacity is paid for.</p>
+    </div>
+    <button class="btn" id="theme" title="Toggle light/dark">◑</button>
+  </div>
+
+  <div class="card">
+    <h2>1 · The job</h2>
+    <div class="grid g4">
+      <div><label>Requests per month</label><input id="volMonth" type="number" value="1000000" min="1"></div>
+      <div><label>Avg output length <span class="hint">tokens</span></label><input id="outTok" type="number" value="250" min="1"></div>
+      <div><label>Quality bar <span class="hint">% on your test set</span></label><input id="qBar" type="number" value="92" min="0" max="100" step="0.5"></div>
+      <div><label>Max response time <span class="hint">seconds</span></label><input id="maxSec" type="number" value="8" min="0.1" step="0.5"></div>
+    </div>
+    <p class="note">The quality bar is the only number nobody can supply for you. It means: on 100 real examples a domain expert has graded, what score is good enough to ship?</p>
+  </div>
+
+  <div class="card">
+    <h2>2 · The hardware</h2>
+    <div class="grid g4">
+      <div><label>GPU</label><select id="gpu"></select></div>
+      <div><label>Price per GPU <span class="hint">what you paid</span></label><input id="gpuPrice" type="number" value="30000" min="1"></div>
+      <div><label>Depreciate over <span class="hint">years</span></label><input id="life" type="number" value="3" min="0.5" step="0.5"></div>
+      <div><label>Electricity <span class="hint">per kWh</span></label><input id="kwh" type="number" value="0.12" min="0" step="0.01"></div>
+    </div>
+    <details>
+      <summary>Advanced — batching, power and overheads</summary>
+      <div class="grid g4" style="margin-top:14px">
+        <div><label>Concurrent requests</label><input id="conc" type="number" value="16" min="1"></div>
+        <div><label>Overheads <span class="hint">% on top of capex</span></label><input id="ovh" type="number" value="25" min="0"></div>
+        <div><label>PUE <span class="hint">cooling factor</span></label><input id="pue" type="number" value="1.4" min="1" step="0.05"></div>
+        <div><label>Idle draw <span class="hint">% of full</span></label><input id="idle" type="number" value="15" min="0" max="100"></div>
+        <div><label>VRAM <span class="hint">GB per GPU</span></label><input id="vram" type="number" value="80" min="1"></div>
+        <div><label>Bandwidth <span class="hint">GB/s</span></label><input id="bw" type="number" value="3350" min="1"></div>
+        <div><label>Power <span class="hint">watts</span></label><input id="tdp" type="number" value="700" min="1"></div>
+      </div>
+      <p class="note">Overheads cover rack, network, support contract and admin time — not electricity, which PUE already accounts for. Idle draw matters: a GPU sitting idle still costs nearly what a busy one does, which is the whole reason the two cost figures below differ.</p>
+    </details>
+  </div>
+
+  <div class="card">
+    <h2>3 · The candidates</h2>
+    <table id="cands">
+      <thead><tr>
+        <th style="width:26%">Model</th>
+        <th class="num" style="width:11%">Params (B)</th>
+        <th style="width:15%">Precision</th>
+        <th class="num" style="width:15%">Your score (%)</th>
+        <th class="num" style="width:21%">Speed (tok/s)</th>
+        <th style="width:5%"></th>
+      </tr></thead>
+      <tbody id="crows"></tbody>
+    </table>
+    <button class="btn" id="add" style="margin-top:14px">+ Add a model</button>
+    <p class="note"><strong>Your score</strong> is the model's result on your graded examples — not a public benchmark. <strong>Speed</strong> auto-fills with a rough estimate from memory bandwidth; it is a shortlisting guess that can be wrong by half. Type a measured number over it as soon as you have one, and it will be marked as measured.</p>
+  </div>
+
+  <div id="out"></div>
+
+  <p class="note" style="margin-top:26px">
+    Estimated speeds assume the model is memory-bandwidth-bound during generation, which is the usual case, with batching gains that flatten as concurrency rises. VRAM figures cover weights plus roughly 20% runtime overhead and exclude the KV cache, which grows with concurrency and context length — so treat a model that only just fits as one that doesn't. Nothing here is a substitute for running the thing on your own box for an afternoon.
+  </p>
+</div>
+<div id="tip"></div>
+
+<script>
+const GPUS = [
+  {n:"NVIDIA H100 SXM 80GB", vram:80,  bw:3350, tdp:700},
+  {n:"NVIDIA H100 PCIe 80GB",vram:80,  bw:2000, tdp:350},
+  {n:"NVIDIA H200 SXM 141GB",vram:141, bw:4800, tdp:700},
+  {n:"NVIDIA A100 80GB",     vram:80,  bw:2000, tdp:400},
+  {n:"NVIDIA A100 40GB",     vram:40,  bw:1555, tdp:400},
+  {n:"NVIDIA L40S 48GB",     vram:48,  bw:864,  tdp:350},
+  {n:"NVIDIA RTX 6000 Ada",  vram:48,  bw:960,  tdp:300},
+  {n:"NVIDIA RTX 4090 24GB", vram:24,  bw:1008, tdp:450},
+  {n:"Custom / other",       vram:80,  bw:2000, tdp:500}
+];
+const PREC = [
+  {n:"FP16 / BF16", b:2},
+  {n:"FP8 / INT8",  b:1},
+  {n:"4-bit",       b:0.5}
+];
+// Estimator constants, exposed here rather than buried: real kernels reach only
+// part of peak bandwidth, tensor parallelism scales sub-linearly, and batching
+// gains flatten out.
+const MEM_EFF = 0.70, TP_SCALE = 0.80, BATCH_HALF = 32;
+const HOURS = 8760, SEC_H = 3600;
+
+let rows = [
+  {name:"Llama 3.1 8B",   p:8,   q:0, score:88.5, tps:null},
+  {name:"Qwen2.5 14B",    p:14,  q:0, score:92.6, tps:null},
+  {name:"Llama 3.3 70B",  p:70,  q:1, score:95.1, tps:null}
+];
+
+const $ = id => document.getElementById(id);
+const num = id => parseFloat($(id).value) || 0;
+const money = v => (v>=100? v.toFixed(0) : v>=1? v.toFixed(2) : v.toFixed(3));
+const big = v => v>=1e9? (v/1e9).toFixed(2)+"B" : v>=1e6? (v/1e6).toFixed(2)+"M" : v>=1e3? (v/1e3).toFixed(1)+"k" : v.toFixed(0);
+
+function buildGpu(){
+  $("gpu").innerHTML = GPUS.map((g,i)=>`<option value="${i}">${g.n}</option>`).join("");
+  $("gpu").onchange = () => {
+    const g = GPUS[+$("gpu").value];
+    $("vram").value = g.vram; $("bw").value = g.bw; $("tdp").value = g.tdp;
+    render();
+  };
+}
+
+function drawRows(){
+  $("crows").innerHTML = rows.map((r,i)=>`
+    <tr>
+      <td><input data-i="${i}" data-f="name" value="${r.name.replace(/"/g,'&quot;')}"></td>
+      <td><input data-i="${i}" data-f="p" type="number" min="0.1" step="0.1" value="${r.p}"></td>
+      <td><select data-i="${i}" data-f="q">${PREC.map((p,j)=>`<option value="${j}" ${j===r.q?"selected":""}>${p.n}</option>`).join("")}</select></td>
+      <td><input data-i="${i}" data-f="score" type="number" min="0" max="100" step="0.1" value="${r.score}"></td>
+      <td><input data-i="${i}" data-f="tps" type="number" min="1" placeholder="estimate" value="${r.tps ?? ""}"></td>
+      <td><button class="btn x" data-del="${i}" title="Remove">×</button></td>
+    </tr>`).join("");
+  $("crows").querySelectorAll("input,select").forEach(el=>{
+    el.oninput = () => {
+      const r = rows[+el.dataset.i], f = el.dataset.f;
+      if(f==="name") r.name = el.value;
+      else if(f==="tps") r.tps = el.value==="" ? null : parseFloat(el.value);
+      else r[f] = parseFloat(el.value);
+      render();
+    };
+  });
+  $("crows").querySelectorAll("[data-del]").forEach(b=>{
+    b.onclick = () => { if(rows.length>1){ rows.splice(+b.dataset.del,1); drawRows(); render(); } };
+  });
+}
+
+function compute(){
+  const volume   = num("volMonth")*12;
+  const outTok   = num("outTok");
+  const qBar     = num("qBar");
+  const maxSec   = num("maxSec");
+  const conc     = Math.max(1, num("conc"));
+  const vram     = num("vram"), bw = num("bw"), tdpW = num("tdp");
+  const price    = num("gpuPrice"), life = Math.max(.1,num("life"));
+  const kwh      = num("kwh"), pue = Math.max(1,num("pue"));
+  const ovh      = num("ovh")/100, idle = Math.min(1,num("idle")/100);
+
+  // Cost of one GPU-hour, split into the part that does not vary with load and
+  // the part that does. Keeping them apart is what makes the idle penalty visible.
+  const fixedPerGpuH = (price/(life*HOURS))*(1+ovh);
+  const varPerGpuH   = load => (tdpW/1000)*(idle+load*(1-idle))*pue*kwh;
+
+  return rows.map(r => {
+    const bytes    = PREC[r.q].b;
+    const weights  = r.p*bytes;                 // GB
+    const vramNeed = weights*1.2;               // + runtime overhead, excl. KV cache
+    const gpus     = Math.max(1, Math.ceil(vramNeed/vram));
+    const effBw    = bw*gpus*(gpus>1?TP_SCALE:1)*MEM_EFF;
+    const single   = effBw/weights;             // tok/s for one sequence
+    const estAgg   = single*conc/(1+conc/BATCH_HALF);
+    const agg      = r.tps ?? estAgg;
+    const measured = r.tps != null;
+    const perStream= agg/conc;
+    const respSec  = outTok/perStream;
+
+    const rps      = agg/outTok;
+    const capPer   = rps*SEC_H*HOURS;
+    const replicas = Math.max(1, Math.ceil(volume/capPer));
+    const capacity = capPer*replicas;
+    const u        = volume/capacity;
+    const totalGpu = replicas*gpus;
+
+    const peak1k   = 1000*(fixedPerGpuH+varPerGpuH(1))*gpus/(rps*SEC_H);
+    const annual   = totalGpu*(fixedPerGpuH+varPerGpuH(u))*HOURS;
+    const true1k   = 1000*annual/volume;
+
+    const okQual   = r.score >= qBar;
+    const okLat    = respSec <= maxSec;
+    return {...r, weights, vramNeed, gpus, totalGpu, replicas, agg, measured, estAgg,
+            respSec, rps, u, peak1k, true1k, annual, okQual, okLat,
+            feasible: okQual && okLat, gap: true1k/peak1k};
+  });
+}
+
+function render(){
+  const res = compute();
+  const qBar = num("qBar"), maxSec = num("maxSec");
+  const feas = res.filter(r=>r.feasible).sort((a,b)=>a.annual-b.annual);
+  // Below a certain volume every model that fits on the same GPU count costs the
+  // same, because you are paying for the box whether you use it or not. When that
+  // happens, ranking by cost is noise - take the best model you can have for free.
+  const TIE = 1.10;
+  const tied = feas.filter(r => r.annual <= feas[0]?.annual*TIE);
+  const win  = tied.length ? tied.slice().sort((a,b)=>b.score-a.score)[0] : feas[0];
+  const costTie = tied.length > 1;
+  const maxA = Math.max(...res.map(r=>r.annual), 1);
+
+  let verdict;
+  if(!win){
+    const missQ = res.filter(r=>!r.okQual).length, missL = res.filter(r=>!r.okLat).length;
+    const both  = res.filter(r=>!r.okQual && !r.okLat).length;
+    const parts = [];
+    if(missQ) parts.push(`${missQ} missed the ${qBar}% quality bar`);
+    if(missL) parts.push(`${missL} could not answer within ${maxSec}s`);
+    const overlap = both ? ` (${both} failed on both counts)` : "";
+    const fix = missL && !missQ
+      ? "Everything on the list is good enough; nothing is fast enough. Raise the concurrency, split the work across more GPUs, or shorten the responses before adding a bigger model."
+      : missQ && !missL
+      ? "Everything on the list is fast enough; nothing is good enough. Try a fine-tune or retrieval on the cheapest candidate before reaching for a larger model."
+      : "Either the bar is set higher than this task really needs, or the shortlist needs a different model, a fine-tune, or better retrieval before cost is worth discussing.";
+    verdict = `<div class="verdict" style="border-left-color:var(--crit)">
+      <div class="kicker">No candidate qualifies</div>
+      <div class="pick">Nothing clears your bar</div>
+      <p class="why">Of ${res.length} candidate${res.length===1?"":"s"}, ${parts.join(" and ")}${overlap}. ${fix}</p></div>`;
+  } else {
+    const rivals = feas.filter(r=>r!==win).sort((a,b)=>a.annual-b.annual);
+    let why;
+    if(costTie){
+      const others = tied.filter(r=>r!==win).map(r=>r.name).join(" and ");
+      why = `It scores ${win.score}% against your ${qBar}% bar and answers in about ${win.respSec.toFixed(1)}s. ` +
+            `It costs the same as ${others} — within a rounding error of ${'$'+big(win.annual)} a year — because at this volume you are paying for the hardware, not for the tokens. ` +
+            `When several models cost the same, take the best one.`;
+    } else {
+      why = `It clears your ${qBar}% quality bar at ${win.score}% and answers in about ${win.respSec.toFixed(1)}s, and among the models that qualify it is the cheapest to run — ${'$'+big(win.annual)} a year on ${win.totalGpu} GPU${win.totalGpu===1?"":"s"}.`;
+    }
+    const dearer = rivals.filter(r=>r.annual > win.annual*TIE)[0];
+    if(dearer){
+      const mult = dearer.annual/win.annual, dq = dearer.score-win.score;
+      why += ` ${dearer.name} scores ${dq>0?dq.toFixed(1)+" points higher":"no better"} but costs ${mult.toFixed(1)}× as much` +
+             (dq>0 ? ` — worth it only if those points are worth ${'$'+big(dearer.annual-win.annual)} a year to you.` : `.`);
+    }
+    const cheaper = res.filter(r=>!r.feasible && r.annual < win.annual)
+                       .sort((a,b)=>a.annual-b.annual)[0];
+    if(cheaper){
+      const reason = !cheaper.okQual
+        ? `misses the quality bar by ${(qBar-cheaper.score).toFixed(1)} points`
+        : `takes ${cheaper.respSec.toFixed(1)}s to answer, past your ${maxSec}s limit`;
+      why += ` ${cheaper.name} would be cheaper still, but it ${reason}.`;
+    }
+    verdict = `<div class="verdict">
+      <div class="kicker">Recommended</div>
+      <div class="pick">${win.name}</div>
+      <p class="why">${why}</p>
+      <div class="tiles">
+        <div class="tile"><div class="k">Real cost</div><div class="v">$${money(win.true1k)}</div><div class="n">per 1,000 requests</div></div>
+        <div class="tile"><div class="k">If it ran flat out</div><div class="v">$${money(win.peak1k)}</div><div class="n">per 1,000 — the number calculators quote</div></div>
+        <div class="tile"><div class="k">Idle penalty</div><div class="v">${win.gap.toFixed(1)}×</div><div class="n">what you pay above the flat-out price, at ${(win.u*100).toFixed(0)}% used</div></div>
+      </div>
+      ${win.u<0.25 ? `<div class="callout"><strong>Cost is not your deciding factor here.</strong> At ${(win.u*100).toFixed(0)}% utilisation the hardware is idle ${((1-win.u)*100).toFixed(0)}% of the time, so nearly every model on this list costs about the same to run — you are paying for the box, not the tokens. Two things follow. Pick on quality and latency, not price. And before buying anything, ask whether this workload justifies dedicated hardware at all, or whether it should share a box with your other models.</div>`
+        : win.gap>1.5 ? `<div class="callout"><strong>Where the money actually goes.</strong> At ${(win.u*100).toFixed(0)}% utilisation you are buying ${win.totalGpu} GPU${win.totalGpu===1?"":"s"} and using a fraction of ${win.totalGpu===1?"it":"them"}. An idle GPU costs what a busy one costs — the capex, rack and support contract do not care. Before switching models to save money, check whether consolidating other workloads onto the same box saves more.</div>`:""}
+    </div>`;
+  }
+
+  const chart = res.slice().sort((a,b)=>a.annual-b.annual).map(r=>`
+    <div class="row">
+      <div class="nm" title="${r.name}">${r.name}</div>
+      <div class="track"><div class="bar ${r.feasible?"":"out"}" style="width:${Math.max(1.5,r.annual/maxA*100)}%"
+        data-tip="${r.name}|${r.feasible?"Qualifies":"Does not qualify"} · $${money(r.true1k)} per 1k requests · ${r.totalGpu} GPU${r.totalGpu===1?"":"s"} at ${(r.u*100).toFixed(0)}% used"></div></div>
+      <div class="vl">$${big(r.annual)}${r.feasible?"":' <span class="tag no">out</span>'}</div>
+    </div>`).join("");
+
+  const table = res.map(r=>`
+    <tr>
+      <td>${r.name}<br><span style="font-size:11.5px;color:var(--muted)">${r.weights.toFixed(0)} GB weights · ${r.gpus} GPU/replica</span></td>
+      <td class="num">${r.score}%<br>${r.okQual?'<span class="tag ok">✓ clears</span>':'<span class="tag no">✕ short</span>'}</td>
+      <td class="num">${r.respSec.toFixed(1)}s<br>${r.okLat?'<span class="tag ok">✓ in time</span>':'<span class="tag no">✕ slow</span>'}</td>
+      <td class="num">${big(r.agg)}<br><span class="tag ${r.measured?"meas":"est"}">${r.measured?"measured":"estimate"}</span></td>
+      <td class="num">${r.totalGpu}</td>
+      <td class="num">${(r.u*100).toFixed(0)}%</td>
+      <td class="num">$${money(r.peak1k)}</td>
+      <td class="num"><strong>$${money(r.true1k)}</strong></td>
+      <td class="num">$${big(r.annual)}</td>
+    </tr>`).join("");
+
+  const anyEst = res.some(r=>!r.measured);
+
+  $("out").innerHTML = verdict + `
+    <div class="card">
+      <h2>Annual cost — cheapest first</h2>
+      <div class="chart">${chart}</div>
+      <p class="note">Solid bars qualify on both quality and speed. Grey bars are ruled out and are shown so you can see what you are turning down.</p>
+    </div>
+    <div class="card">
+      <h2>The numbers</h2>
+      <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>Model</th><th class="num">Quality</th><th class="num">Response</th>
+          <th class="num">Speed tok/s</th><th class="num">GPUs</th><th class="num">Used</th>
+          <th class="num">Flat out $/1k</th><th class="num">Real $/1k</th><th class="num">Per year</th>
+        </tr></thead>
+        <tbody>${table}</tbody>
+      </table></div>
+      <p class="note"><strong>Flat out $/1k</strong> assumes the GPU never idles — the figure every online calculator quotes. <strong>Real $/1k</strong> is what you will actually pay at your volume. The gap between them is idle capacity, and on-premise it is usually the largest line in the whole comparison.</p>
+      ${anyEst?`<div class="warnbox"><strong>Some speeds are estimates.</strong> They come from memory bandwidth and can be out by half in either direction, which moves cost by the same factor. Run one model on your own hardware for an afternoon, type the real number in, and the ranking here becomes something you can defend in a board meeting.</div>`:""}
+    </div>`;
+
+  document.querySelectorAll("[data-tip]").forEach(el=>{
+    el.onmousemove = e => {
+      const t = $("tip"), [h,b] = el.dataset.tip.split("|");
+      t.innerHTML = `<b>${h}</b>${b}`;
+      t.style.opacity = 1;
+      t.style.left = Math.min(e.clientX+14, innerWidth-265)+"px";
+      t.style.top  = (e.clientY+16)+"px";
+    };
+    el.onmouseleave = () => $("tip").style.opacity = 0;
+  });
+}
+
+$("add").onclick = () => { rows.push({name:"New model",p:8,q:2,score:90,tps:null}); drawRows(); render(); };
+$("theme").onclick = () => {
+  document.documentElement.dataset.theme =
+    document.documentElement.dataset.theme==="dark" ? "light" : "dark";
+};
+["volMonth","outTok","qBar","maxSec","gpuPrice","life","kwh","conc","ovh","pue","idle","vram","bw","tdp"]
+  .forEach(id => $(id).oninput = render);
+
+if(matchMedia("(prefers-color-scheme: dark)").matches) document.documentElement.dataset.theme="dark";
+buildGpu(); drawRows(); render();
+</script>
+</body>
+</html>
