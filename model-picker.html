@@ -135,7 +135,7 @@
     #out table td span[style]{font-size:8px!important}
     #out [style*="overflow-x"]{overflow:visible!important}
     thead{display:table-header-group}
-    td{padding:4px 6px 4px 0}
+    td{padding:4px 5px 4px 0}
     th{padding:0 6px 4px 0;font-size:8px}
     .tag{font-size:8px;padding:1px 5px}
     /* the explanatory notes are for the person filling this in, not for the
@@ -200,6 +200,13 @@
 
   <div class="card inputs">
     <h2>3 · The candidates</h2>
+    <div style="display:flex;gap:18px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:7px;margin:0 0 6px">
+        <input type="checkbox" id="useApi" style="width:auto;margin:0"> Compare against renting the same model from a cloud API
+      </label>
+      <div id="apiJob" style="display:none"><label>Avg input length <span class="hint">tokens, for API pricing</span></label>
+        <input id="inTok" type="number" value="500" min="0" style="width:150px"></div>
+    </div>
     <table id="cands">
       <thead><tr>
         <th style="width:26%">Model</th>
@@ -207,11 +214,14 @@
         <th style="width:15%">Precision</th>
         <th class="num" style="width:15%">Your score (%)</th>
         <th class="num" style="width:21%">Speed (tok/s)</th>
+        <th class="num apiCol" style="width:13%;display:none">API $/M in</th>
+        <th class="num apiCol" style="width:13%;display:none">API $/M out</th>
         <th style="width:5%"></th>
       </tr></thead>
       <tbody id="crows"></tbody>
     </table>
     <button class="btn" id="add" style="margin-top:14px">+ Add a model</button>
+    <p class="note apiNote" style="display:none"><strong>API prices are yours to enter.</strong> Nothing is hardcoded here — published prices change monthly and any figure baked into this file would be wrong by the time you read it. Take the two numbers off the provider's pricing page for the model you would actually rent. The comparison covers tokens only: egress, rate-limit headroom and the fact that your data leaves the building are not priced.</p>
     <p class="note"><strong>Your score</strong> is the model's result on your graded examples — not a public benchmark. <strong>Speed</strong> auto-fills with a rough estimate from memory bandwidth; it is a shortlisting guess that can be wrong by half. Type a measured number over it as soon as you have one, and it will be marked as measured.</p>
   </div>
 
@@ -257,9 +267,9 @@ const MEM_EFF = 0.70, TP_SCALE = 0.80, BATCH_HALF = 32;
 const HOURS = 8760, SEC_H = 3600;
 
 let rows = [
-  {name:"Llama 3.1 8B",   p:8,   q:0, score:88.5, tps:null},
-  {name:"Qwen2.5 14B",    p:14,  q:0, score:92.6, tps:null},
-  {name:"Llama 3.3 70B",  p:70,  q:1, score:95.1, tps:null}
+  {name:"Llama 3.1 8B",   p:8,   q:0, score:88.5, tps:null, ai:0, ao:0},
+  {name:"Qwen2.5 14B",    p:14,  q:0, score:92.6, tps:null, ai:0, ao:0},
+  {name:"Llama 3.3 70B",  p:70,  q:1, score:95.1, tps:null, ai:0, ao:0}
 ];
 
 const $ = id => document.getElementById(id);
@@ -280,6 +290,10 @@ function buildGpu(){
 }
 
 function drawRows(){
+  const api = $("useApi").checked;
+  document.querySelectorAll("th.apiCol").forEach(th => th.style.display = api ? "table-cell" : "none");
+  $("apiJob").style.display = api ? "block" : "none";
+  document.querySelectorAll(".apiNote").forEach(n => n.style.display = api ? "block" : "none");
   $("crows").innerHTML = rows.map((r,i)=>`
     <tr>
       <td><input data-i="${i}" data-f="name" value="${esc(r.name)}"></td>
@@ -287,6 +301,8 @@ function drawRows(){
       <td><select data-i="${i}" data-f="q">${PREC.map((p,j)=>`<option value="${j}" ${j===r.q?"selected":""}>${p.n}</option>`).join("")}</select></td>
       <td><input data-i="${i}" data-f="score" type="number" min="0" max="100" step="0.1" value="${r.score}"></td>
       <td><input data-i="${i}" data-f="tps" type="number" min="1" placeholder="estimate" value="${r.tps ?? ""}"></td>
+      <td class="apiCol" style="display:${api?"table-cell":"none"}"><input data-i="${i}" data-f="ai" type="number" min="0" step="0.01" value="${r.ai ?? 0}"></td>
+      <td class="apiCol" style="display:${api?"table-cell":"none"}"><input data-i="${i}" data-f="ao" type="number" min="0" step="0.01" value="${r.ao ?? 0}"></td>
       <td><button class="btn x" data-del="${i}" title="Remove">×</button></td>
     </tr>`).join("");
   $("crows").querySelectorAll("input,select").forEach(el=>{
@@ -316,6 +332,7 @@ function compute(mult){
   const kwh      = num("kwh"), pue = Math.max(1,num("pue"));
   const ovh      = num("ovh")/100, idle = Math.min(1,num("idle")/100);
   const errCost  = Math.max(0, num("errCost"));
+  const api      = $("useApi").checked, inTok = num("inTok");
 
   // Cost of one GPU-hour, split into the part that does not vary with load and
   // the part that does. Keeping them apart is what makes the idle penalty visible.
@@ -354,11 +371,17 @@ function compute(mult){
     const total    = annual + errAnnual;
     const all1k    = 1000*total/volume;
 
+    // Renting the same model: tokens only, at the prices the user typed.
+    const apiAnnual= api ? volume*(inTok*(r.ai||0) + outTok*(r.ao||0))/1e6 : 0;
+    const api1k    = 1000*apiAnnual/volume;
+    const apiTotal = apiAnnual + errAnnual;      // the same model gets the same answers wrong
+
     const okQual   = r.score >= qBar;
     const okLat    = respSec <= maxSec;
     return {...r, weights, vramNeed, gpus, totalGpu, replicas, agg, measured, estAgg,
             respSec, rps, u, peak1k, true1k, annual, errRate, errAnnual, total, all1k,
-            okQual, okLat, feasible: okQual && okLat, gap: true1k/peak1k};
+            apiAnnual, api1k, apiTotal, okQual, okLat,
+            feasible: okQual && okLat, gap: true1k/peak1k};
   });
 }
 
@@ -485,11 +508,46 @@ function errCallout(win, feas){
   return `<div class="callout"><strong>Errors are ${(share*100).toFixed(0)}% of what this costs you.</strong> ${esc(win.name)} is both the cheapest hardware and the cheapest all in — ${'$'+big(win.errAnnual)} a year of wrong answers on top of ${'$'+big(win.annual)} of hardware. ${share>0.5 ? "More than half your bill is mistakes, so accuracy is where the money is: a fine-tune, better retrieval or a review step will beat any hardware saving on this list." : "Nothing on the list buys enough accuracy to be worth its extra hardware at this error price."}${idleNote}</div>`;
 }
 
+// Buy versus build, in one sentence, on the model actually recommended. Cost
+// only: latency and everything else about renting is not modelled, and saying
+// so is part of the answer.
+function apiCallout(win, priced){
+  if(!win.apiAnnual) return `<div class="callout"><strong>No API price entered yet.</strong> Put the provider's per-million-token figures for ${esc(win.name)} in the two API columns and this will say plainly whether owning the hardware is worth it at your volume.</div>`;
+  const own  = priced ? win.total : win.annual;
+  const rent = priced ? win.apiTotal : win.apiAnnual;
+  const cheaper = own <= rent;
+  const mult = cheaper ? rent/own : own/rent;
+  // Within a few percent the two are the same price and the decision belongs
+  // somewhere other than this callout.
+  if(mult < 1.05) return `<div class="callout"><strong>Owning and renting cost the same here.</strong>
+    ${esc(win.name)} is ${'$'+big(own)} a year on your own GPUs against ${'$'+big(rent)} rented${priced?", errors included on both sides":""} — inside the margin of error on either estimate.
+    Decide it on what cost does not capture: control of latency and capacity, procurement time, whether your data can leave the building, and who carries the risk when the model is retired.</div>`;
+  // Below full utilisation the box costs the same whether or not you use it, so
+  // there is a volume where renting overtakes it. Once it is saturated both
+  // sides scale with traffic and no such crossover exists - claiming one would
+  // be inventing a number.
+  const spare = win.u < 0.85;
+  const perReq = win.apiAnnual/(num("volMonth")*12);
+  const evenMonth = perReq > 0 ? (win.annual/perReq)/12 : 0;
+  const tail = cheaper
+    ? spare
+      ? `Renting only becomes cheaper below about ${big(evenMonth)} requests a month — below that you are paying for a box you barely use.`
+      : `The GPUs are already running at ${(win.u*100).toFixed(0)}% of capacity, so both figures scale with traffic: that ratio holds at any volume, and the case for owning does not depend on growth.`
+    : spare
+      ? `The hardware only pays for itself above about ${big(evenMonth)} requests a month, roughly ${(evenMonth/num("volMonth")).toFixed(1)}× your volume. Rent until you are there.`
+      : `That is with the hardware ${(win.u*100).toFixed(0)}% used, so growth will not fix it — renting is simply cheaper per token here.`;
+  return `<div class="callout"><strong>${cheaper ? "Owning the hardware wins at this volume." : "Renting wins at this volume."}</strong>
+    ${esc(win.name)} costs ${'$'+big(own)} a year on your own GPUs against ${'$'+big(rent)} a year rented${priced?" (both including what the errors cost, which are the same either way)":""} — ${mult.toFixed(1)}× ${cheaper?"more to rent":"more to own"}.
+    ${tail}
+    Cost is not the whole argument: renting means no capacity to run idle, no procurement, and your data leaving the building.</div>`;
+}
+
 function render(){
   const res = compute();
   const qBar = num("qBar"), maxSec = num("maxSec");
   const {feas, tied, win, costTie} = choose(res);
   const priced = num("errCost") > 0;                 // are errors being paid for?
+  const api    = $("useApi").checked;
   const maxA = Math.max(...res.map(r=>r.total), 1);
 
   let verdict;
@@ -547,6 +605,7 @@ function render(){
         <div class="tile"><div class="k">If it ran flat out</div><div class="v">$${money(win.peak1k)}</div><div class="n">per 1,000 — the number calculators quote</div></div>
         <div class="tile"><div class="k">Idle penalty</div><div class="v">${win.gap.toFixed(1)}×</div><div class="n">what you pay above the flat-out price, at ${(win.u*100).toFixed(0)}% used</div></div>
       </div>
+      ${api ? apiCallout(win, priced) : ""}
       ${priced ? errCallout(win, feas) : win.u<0.25 ? `<div class="callout"><strong>Cost is not your deciding factor here.</strong> At ${(win.u*100).toFixed(0)}% utilisation the hardware is idle ${((1-win.u)*100).toFixed(0)}% of the time, so nearly every model on this list costs about the same to run — you are paying for the box, not the tokens. Two things follow. Pick on quality and latency, not price. And before buying anything, ask whether this workload justifies dedicated hardware at all, or whether it should share a box with your other models.</div>`
         : win.gap>1.5 ? `<div class="callout"><strong>Where the money actually goes.</strong> At ${(win.u*100).toFixed(0)}% utilisation you are buying ${win.totalGpu} GPU${win.totalGpu===1?"":"s"} and using a fraction of ${win.totalGpu===1?"it":"them"}. An idle GPU costs what a busy one costs — the capex, rack and support contract do not care. Before switching models to save money, check whether consolidating other workloads onto the same box saves more.</div>`:""}
     </div>`;
@@ -575,6 +634,7 @@ function render(){
       <td class="num">$${big(r.annual)}</td>
       ${priced?`<td class="num">$${big(r.errAnnual)}<br><span style="font-size:11.5px;color:var(--muted)">${(r.errRate*100).toFixed(1)}% wrong</span></td>
       <td class="num"><strong>$${big(r.total)}</strong></td>`:""}
+      ${api?`<td class="num">${r.apiAnnual? "$"+big(r.apiAnnual) : "—"}<br><span style="font-size:11.5px;color:var(--muted)">${r.apiAnnual? "$"+money(r.api1k)+"/1k" : "no price"}</span></td>`:""}
     </tr>`).join("");
 
   const anyEst = res.some(r=>!r.measured);
@@ -595,6 +655,7 @@ function render(){
           <th class="num">Flat out $/1k</th><th class="num">${priced?"All-in $/1k":"Real $/1k"}</th>
           <th class="num">${priced?"Hardware/yr":"Per year"}</th>
           ${priced?'<th class="num">Errors/yr</th><th class="num">All in/yr</th>':""}
+          ${api?'<th class="num">Rented/yr</th>':""}
         </tr></thead>
         <tbody>${table}</tbody>
       </table></div>
@@ -611,6 +672,7 @@ function render(){
     ${esc(gpuName)} at $${big(num("gpuPrice"))} over ${num("life")} years ·
     $${num("kwh")}/kWh · ${num("conc")} concurrent · ${num("ovh")}% overheads ·
     ${priced ? `$${money(num("errCost"))} per wrong answer` : "errors not priced"} ·
+    ${api ? `${num("inTok")} input tokens, API prices as entered` : "on-premise only"} ·
     printed ${new Date().toLocaleDateString()}</p>`;
 
   document.querySelectorAll("[data-tip]").forEach(el=>{
@@ -626,30 +688,32 @@ function render(){
   });
 }
 
-$("add").onclick = () => { rows.push({name:"New model",p:8,q:2,score:90,tps:null}); drawRows(); render(); };
+$("add").onclick = () => { rows.push({name:"New model",p:8,q:2,score:90,tps:null,ai:0,ao:0}); drawRows(); render(); };
 $("theme").onclick = () => {
   document.documentElement.dataset.theme =
     document.documentElement.dataset.theme==="dark" ? "light" : "dark";
 };
-["volMonth","outTok","qBar","maxSec","errCost","gpuPrice","life","kwh","conc","ovh","pue","idle","vram","bw","tdp"]
+["volMonth","outTok","qBar","maxSec","errCost","inTok","gpuPrice","life","kwh","conc","ovh","pue","idle","vram","bw","tdp"]
   .forEach(id => $(id).oninput = render);
+$("useApi").onchange = () => { drawRows(); render(); };
 
 // ---- The URL is the save file -------------------------------------------
 // Everything the user typed packs into the hash, so a scenario can be mailed
 // to a colleague or reopened next week. No storage APIs, no backend: if the
 // link travels, the numbers travel with it.
 const FIELDS = ["volMonth","outTok","qBar","maxSec","gpu","gpuPrice","life","kwh",
-                "conc","ovh","pue","idle","vram","bw","tdp","errCost"];
-// v1 links predate the cost-of-a-wrong-answer field. They are still good links:
-// read them as that field being zero, which is what they meant.
-const V1_LEN = FIELDS.length - 1;
+                "conc","ovh","pue","idle","vram","bw","tdp","errCost","inTok"];
+// Older links are still good links. v1 predates the cost of a wrong answer and
+// v2 the cloud comparison; both are read as those features switched off, which
+// is what they meant when they were written.
+const OLD_LEN = {1: FIELDS.length-2, 2: FIELDS.length-1};
 // encodeURIComponent leaves ~ alone, and ~ is our field separator inside a model.
 const encName = s => encodeURIComponent(s).replace(/~/g,"%7E");
 
 function encodeState(){
   const f = FIELDS.map(id => $(id).value).join(",");
-  const m = rows.map(r => [encName(r.name), r.p, r.q, r.score, r.tps ?? ""].join("~")).join("|");
-  return "v=2&f=" + f + "&m=" + m;
+  const m = rows.map(r => [encName(r.name), r.p, r.q, r.score, r.tps ?? "", r.ai||0, r.ao||0].join("~")).join("|");
+  return "v=3&a=" + ($("useApi").checked?1:0) + "&f=" + f + "&m=" + m;
 }
 
 function shareUrl(){
@@ -664,10 +728,12 @@ function applyState(hash){
     const i = kv.indexOf("=");
     if(i>0) parts[kv.slice(0,i)] = kv.slice(i+1);
   });
-  if(!/^[12]$/.test(parts.v || "") || !parts.f) return false;
+  const v = parts.v;
+  if(!/^[123]$/.test(v || "") || !parts.f) return false;
 
   const vals = parts.f.split(",");
-  if(parts.v === "1" && vals.length === V1_LEN) vals.push("0");
+  if(vals.length === OLD_LEN[1] && v === "1") vals.push("0");        // errCost
+  if(vals.length === OLD_LEN[2] && v !== "3") vals.push("500");      // inTok
   if(vals.length !== FIELDS.length) return false;
   if(vals.some(v => v==="" || !isFinite(parseFloat(v)))) return false;
 
@@ -675,19 +741,23 @@ function applyState(hash){
   if(parts.m){
     models = parts.m.split("|").map(s=>{
       const c = s.split("~");
-      if(c.length !== 5) return null;
+      if(c.length === 5) c.push("0","0");            // pre-v3 rows carry no prices
+      if(c.length !== 7) return null;
       const p = parseFloat(c[1]), q = parseInt(c[2],10), score = parseFloat(c[3]);
       if(!isFinite(p) || !isFinite(score) || !(q>=0 && q<PREC.length)) return null;
       const tps = c[4]==="" ? null : parseFloat(c[4]);
       if(tps !== null && !isFinite(tps)) return null;
+      const ai = parseFloat(c[5]), ao = parseFloat(c[6]);
+      if(!isFinite(ai) || !isFinite(ao)) return null;
       let name;
       try { name = decodeURIComponent(c[0]); } catch(e) { return null; }
-      return {name, p, q, score, tps};
+      return {name, p, q, score, tps, ai, ao};
     });
     if(models.some(m=>!m) || !models.length) return false;
   }
 
   FIELDS.forEach((id,i) => { $(id).value = vals[i]; });
+  $("useApi").checked = parts.a === "1";
   const gi = +vals[FIELDS.indexOf("gpu")];        // a GPU index we don't know -> Custom
   $("gpu").value = (gi >= 0 && gi < GPUS.length) ? gi : GPUS.length-1;
   if(models) rows = models;
