@@ -100,6 +100,50 @@
   #share .box{background:var(--surface-1);border:1px solid var(--ring);border-radius:var(--r);padding:20px;max-width:560px;width:100%}
   #share textarea{width:100%;height:90px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
     border:1px solid var(--axis);border-radius:7px;padding:8px 10px;background:var(--plane);color:var(--ink);resize:vertical}
+  .printonly{display:none}
+
+  /* These numbers end up in board decks. One page, no forms, no controls -
+     just the recommendation, the figures behind it and the assumptions. */
+  @media print{
+    :root, :root[data-theme="dark"]{
+      color-scheme:light;
+      --surface-1:#fff; --plane:#fff; --ink:#000; --ink-2:#333; --muted:#666;
+      --grid:#dcdcd6; --axis:#bbb; --ring:#c8c8c2; --accent:#2a78d6; --accent-soft:#e8f1fd;
+      --good-text:#046504;
+    }
+    @page{margin:11mm}
+    body{padding:0;font-size:10px;line-height:1.4}
+    .wrap{max-width:none}
+    .inputs, .topbtns, #tip, #share, details, .sub, .warnbox{display:none!important}
+    .printonly{display:block}
+    h1{font-size:16px;margin-bottom:2px}
+    h2{font-size:9px;margin-bottom:6px}
+    .card,.verdict{break-inside:avoid;page-break-inside:avoid;padding:9px 11px;margin-bottom:7px;border-radius:5px}
+    .verdict{border-left-width:2px}
+    .verdict .pick{font-size:17px;margin:2px 0}
+    .verdict .why,.tiles,.chart,table{max-width:none}
+    .tiles{gap:8px;margin-top:9px}
+    .tile{padding:7px 9px}
+    .tile .v{font-size:15px}
+    .tile .n,.tile .k{font-size:8.5px}
+    .callout{padding:8px 10px;margin-top:9px;font-size:9.5px}
+    .row{margin-bottom:5px;grid-template-columns:150px 1fr 110px}
+    .track,.bar{height:14px}
+    /* the all-in columns make this the widest thing on the page, so the table
+       sets its own size rather than being clipped by the scroll container */
+    #out table{font-size:8.5px}
+    #out table td span[style]{font-size:8px!important}
+    #out [style*="overflow-x"]{overflow:visible!important}
+    thead{display:table-header-group}
+    td{padding:4px 6px 4px 0}
+    th{padding:0 6px 4px 0;font-size:8px}
+    .tag{font-size:8px;padding:1px 5px}
+    /* the explanatory notes are for the person filling this in, not for the
+       page they hand round; the headline sentences carry the meaning */
+    .note{display:none}
+    #assume .note{display:block;font-size:8.5px}
+    .track,.bar,.tag,.callout,.tile{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  }
 </style>
 </head>
 <body>
@@ -116,7 +160,7 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card inputs">
     <h2>1 · The job</h2>
     <div class="grid g4">
       <div><label>Requests per month</label><input id="volMonth" type="number" value="1000000" min="1"></div>
@@ -131,7 +175,7 @@
     <p class="note">The quality bar is the only number nobody can supply for you. It means: on 100 real examples a domain expert has graded, what score is good enough to ship?</p>
   </div>
 
-  <div class="card">
+  <div class="card inputs">
     <h2>2 · The hardware</h2>
     <div class="grid g4">
       <div><label>GPU</label><select id="gpu"></select></div>
@@ -154,7 +198,7 @@
     </details>
   </div>
 
-  <div class="card">
+  <div class="card inputs">
     <h2>3 · The candidates</h2>
     <table id="cands">
       <thead><tr>
@@ -171,6 +215,7 @@
     <p class="note"><strong>Your score</strong> is the model's result on your graded examples — not a public benchmark. <strong>Speed</strong> auto-fills with a rough estimate from memory bandwidth; it is a shortlisting guess that can be wrong by half. Type a measured number over it as soon as you have one, and it will be marked as measured.</p>
   </div>
 
+  <div id="assume" class="printonly"></div>
   <div id="out"></div>
 
   <p class="note" style="margin-top:26px">
@@ -556,6 +601,17 @@ function render(){
       <p class="note"><strong>Flat out $/1k</strong> assumes the GPU never idles — the figure every online calculator quotes. <strong>${priced?"All-in $/1k":"Real $/1k"}</strong> is what you will actually pay at your volume${priced?", errors included":""}. The gap between them is idle capacity, and on-premise it is usually the largest line in the whole comparison.${priced?" Errors/yr prices every wrong answer at what you said one costs; it is the only column that pays a better model back for being better.":""}</p>
       ${anyEst?`<div class="warnbox"><strong>Some speeds are estimates.</strong> They come from memory bandwidth and can be out by half in either direction, which moves cost by the same factor. Run one model on your own hardware for an afternoon, type the real number in, and the ranking here becomes something you can defend in a board meeting.</div>`:""}
     </div>` + sensCard(win);
+
+  // The printed page drops the forms, so the assumptions have to travel with
+  // the figures - a number in a deck with no scenario attached is worthless.
+  const gpuName = GPUS[+$("gpu").value] ? GPUS[+$("gpu").value].n : "custom GPU";
+  $("assume").innerHTML = `<p class="note" style="display:block;margin:0 0 14px">
+    ${big(num("volMonth"))} requests a month · ${num("outTok")} output tokens ·
+    quality bar ${qBar}% on your own test set · ${maxSec}s limit ·
+    ${esc(gpuName)} at $${big(num("gpuPrice"))} over ${num("life")} years ·
+    $${num("kwh")}/kWh · ${num("conc")} concurrent · ${num("ovh")}% overheads ·
+    ${priced ? `$${money(num("errCost"))} per wrong answer` : "errors not priced"} ·
+    printed ${new Date().toLocaleDateString()}</p>`;
 
   document.querySelectorAll("[data-tip]").forEach(el=>{
     el.onmousemove = e => {
