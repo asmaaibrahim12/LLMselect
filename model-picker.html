@@ -215,6 +215,9 @@ const $ = id => document.getElementById(id);
 const num = id => parseFloat($(id).value) || 0;
 const money = v => (v>=100? v.toFixed(0) : v>=1? v.toFixed(2) : v.toFixed(3));
 const big = v => v>=1e9? (v/1e9).toFixed(2)+"B" : v>=1e6? (v/1e6).toFixed(2)+"M" : v>=1e3? (v/1e3).toFixed(1)+"k" : v.toFixed(0);
+// Scenarios arrive by link now, so a model name can come from someone else.
+// Everything user-typed goes through this before it reaches innerHTML.
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 function buildGpu(){
   $("gpu").innerHTML = GPUS.map((g,i)=>`<option value="${i}">${g.n}</option>`).join("");
@@ -228,7 +231,7 @@ function buildGpu(){
 function drawRows(){
   $("crows").innerHTML = rows.map((r,i)=>`
     <tr>
-      <td><input data-i="${i}" data-f="name" value="${r.name.replace(/"/g,'&quot;')}"></td>
+      <td><input data-i="${i}" data-f="name" value="${esc(r.name)}"></td>
       <td><input data-i="${i}" data-f="p" type="number" min="0.1" step="0.1" value="${r.p}"></td>
       <td><select data-i="${i}" data-f="q">${PREC.map((p,j)=>`<option value="${j}" ${j===r.q?"selected":""}>${p.n}</option>`).join("")}</select></td>
       <td><input data-i="${i}" data-f="score" type="number" min="0" max="100" step="0.1" value="${r.score}"></td>
@@ -249,7 +252,9 @@ function drawRows(){
   });
 }
 
-function compute(){
+// mult, if given, scales each row's speed. Only estimated speeds move: a number
+// the user measured is not in doubt and must not be shaken about.
+function compute(mult){
   const volume   = num("volMonth")*12;
   const outTok   = num("outTok");
   const qBar     = num("qBar");
@@ -265,7 +270,7 @@ function compute(){
   const fixedPerGpuH = (price/(life*HOURS))*(1+ovh);
   const varPerGpuH   = load => (tdpW/1000)*(idle+load*(1-idle))*pue*kwh;
 
-  return rows.map(r => {
+  return rows.map((r,i) => {
     const bytes    = PREC[r.q].b;
     const weights  = r.p*bytes;                 // GB
     const vramNeed = weights*1.2;               // + runtime overhead, excl. KV cache
@@ -273,7 +278,7 @@ function compute(){
     const effBw    = bw*gpus*(gpus>1?TP_SCALE:1)*MEM_EFF;
     const single   = effBw/weights;             // tok/s for one sequence
     const estAgg   = single*conc/(1+conc/BATCH_HALF);
-    const agg      = r.tps ?? estAgg;
+    const agg      = r.tps ?? estAgg*(mult ? mult[i] : 1);
     const measured = r.tps != null;
     const perStream= agg/conc;
     const respSec  = outTok/perStream;
@@ -297,17 +302,113 @@ function compute(){
   });
 }
 
+// Below a certain volume every model that fits on the same GPU count costs the
+// same, because you are paying for the box whether you use it or not. When that
+// happens, ranking by cost is noise - take the best model you can have for free.
+const TIE = 1.10;
+
+function choose(res){
+  const feas = res.filter(r=>r.feasible).sort((a,b)=>a.annual-b.annual);
+  const tied = feas.filter(r => r.annual <= feas[0]?.annual*TIE);
+  const win  = tied.length ? tied.slice().sort((a,b)=>b.score-a.score)[0] : feas[0];
+  return {feas, tied, win, costTie: tied.length > 1};
+}
+
+// If the estimates are out by half, does the answer change? A recommendation
+// that survives that range can be acted on today; one that flips has to be
+// measured first. That single fact is worth more than a better estimator.
+const SENS = 0.5, NONE = "Nothing qualifies";
+
+function sensitivity(base){
+  const est = rows.map((r,i)=>i).filter(i => rows[i].tps == null);
+  if(!est.length) return null;                  // nothing left to guess at
+
+  const combos = [];
+  if(est.length <= 8){
+    // Every combination of slow/fast across the guesses - 256 rankings at most.
+    for(let m = 0; m < (1<<est.length); m++){
+      const mult = rows.map(()=>1);
+      est.forEach((idx,b) => mult[idx] = (m>>b & 1) ? 1+SENS : 1-SENS);
+      combos.push(mult);
+    }
+  } else {
+    // Too many to enumerate. The cases that actually flip an answer are the
+    // adversarial ones: each candidate slow while every rival is fast.
+    combos.push(rows.map(()=>1-SENS), rows.map(()=>1+SENS));
+    est.forEach(idx => {
+      const mult = rows.map((r,i) => rows[i].tps == null ? 1+SENS : 1);
+      mult[idx] = 1-SENS;
+      combos.push(mult);
+    });
+  }
+
+  const tally = new Map();
+  let keeps = 0, lo = Infinity, hi = -Infinity;
+  combos.forEach(mult => {
+    const w = choose(compute(mult)).win;
+    const k = w ? w.name : NONE;
+    tally.set(k, (tally.get(k)||0)+1);
+    if(w && base && w.name === base.name){
+      keeps++; lo = Math.min(lo, w.true1k); hi = Math.max(hi, w.true1k);
+    }
+  });
+
+  return {n: combos.length, nEst: est.length, exhaustive: est.length <= 8,
+          outcomes: [...tally].sort((a,b)=>b[1]-a[1]), keeps, lo, hi};
+}
+
+function sensCard(win){
+  const s = sensitivity(win);
+  if(!s) return `<div class="card"><h2>If the estimates are wrong</h2>
+    <p class="note" style="margin-top:0">Every speed on the list is a number you measured, so there is nothing left to vary. This ranking stands on your own figures.</p></div>`;
+
+  const stable = win && s.keeps === s.n;
+  const bars = s.outcomes.map(([name,c]) => `
+    <div class="row">
+      <div class="nm" title="${esc(name)}">${esc(name)}</div>
+      <div class="track"><div class="bar ${win && name===win.name ? "" : "out"}"
+        style="width:${Math.max(1.5, c/s.n*100)}%"></div></div>
+      <div class="vl">${(c/s.n*100).toFixed(0)}%</div>
+    </div>`).join("");
+
+  const pct   = c => (c/s.n*100).toFixed(0);
+  const word  = s.exhaustive ? "combinations" : "sampled scenarios";
+  const none  = s.outcomes.find(o => o[0] === NONE);
+  const rival = win ? s.outcomes.filter(o => o[0] !== NONE && o[0] !== win.name) : [];
+  const rivalTxt = rival.length
+    ? ` In ${pct(rival.reduce((a,o)=>a+o[1],0))}% a different model wins — ${rival.map(o=>esc(o[0])).join(", ")}.` : "";
+  const noneTxt = none ? ` In ${pct(none[1])}% nothing clears your bars at all.` : "";
+
+  const headline = stable
+    ? `<strong>Stable.</strong> ${esc(win.name)} is still the answer in all ${s.n} ${word} of the ${s.nEst} estimated speed${s.nEst===1?"":"s"} being out by half, in either direction. `
+      + `You can act on this without benchmarking first — its real cost lands between $${money(s.lo)} and $${money(s.hi)} per 1,000 requests across that whole range.`
+    : win && s.keeps >= s.n*0.8
+    ? `<strong>Mostly stable.</strong> ${esc(win.name)} holds in ${pct(s.keeps)}% of the ${s.n} ${word}.${rivalTxt}${noneTxt} `
+      + `Benchmarking the top two would settle it, but the estimates would have to be badly wrong to change your mind.`
+    : win
+    ? `<strong>The answer depends on the estimates.</strong> ${esc(win.name)} holds in only ${pct(s.keeps)}% of the ${s.n} ${word}.${rivalTxt}${noneTxt} `
+      + `Measure the candidates on your own hardware for an afternoon before committing — an afternoon of benchmarking is cheaper than the wrong box.`
+    : `<strong>Nothing qualifies at these estimates.</strong>${rivalTxt ? " Where the shortlist does produce an answer it is shown below, but" : " And"} the guesses are doing the deciding, so measure before acting on any of it.`;
+
+  // Say why the slow end wipes the board out, and what to do about it - the
+  // percentage itself is already in the headline.
+  const caveat = none && none[1] < s.n
+    ? `<p class="note">The scenarios where nothing qualifies are the slow end of the estimates pushing every candidate past your ${num("maxSec")}s response limit. Raising concurrency, shortening the responses or accepting a slower answer all remove that risk without changing model.</p>`
+    : "";
+
+  return `<div class="card">
+    <h2>If the estimates are wrong</h2>
+    <p style="margin:0 0 16px;color:var(--ink-2);max-width:78ch">${headline}</p>
+    <div class="chart">${bars}</div>
+    <p class="note">Share of the ${s.n} scenarios each model wins when every estimated speed is varied by ±50% independently${s.exhaustive?"":", sampled at the extremes because there are too many combinations to run them all"}. Measured speeds are held fixed — they are not in doubt. Quality scores never move, so a model that misses your bar cannot win its way in here.</p>
+    ${caveat}
+  </div>`;
+}
+
 function render(){
   const res = compute();
   const qBar = num("qBar"), maxSec = num("maxSec");
-  const feas = res.filter(r=>r.feasible).sort((a,b)=>a.annual-b.annual);
-  // Below a certain volume every model that fits on the same GPU count costs the
-  // same, because you are paying for the box whether you use it or not. When that
-  // happens, ranking by cost is noise - take the best model you can have for free.
-  const TIE = 1.10;
-  const tied = feas.filter(r => r.annual <= feas[0]?.annual*TIE);
-  const win  = tied.length ? tied.slice().sort((a,b)=>b.score-a.score)[0] : feas[0];
-  const costTie = tied.length > 1;
+  const {feas, tied, win, costTie} = choose(res);
   const maxA = Math.max(...res.map(r=>r.annual), 1);
 
   let verdict;
@@ -331,7 +432,7 @@ function render(){
     const rivals = feas.filter(r=>r!==win).sort((a,b)=>a.annual-b.annual);
     let why;
     if(costTie){
-      const others = tied.filter(r=>r!==win).map(r=>r.name).join(" and ");
+      const others = tied.filter(r=>r!==win).map(r=>esc(r.name)).join(" and ");
       why = `It scores ${win.score}% against your ${qBar}% bar and answers in about ${win.respSec.toFixed(1)}s. ` +
             `It costs the same as ${others} — within a rounding error of ${'$'+big(win.annual)} a year — because at this volume you are paying for the hardware, not for the tokens. ` +
             `When several models cost the same, take the best one.`;
@@ -341,7 +442,7 @@ function render(){
     const dearer = rivals.filter(r=>r.annual > win.annual*TIE)[0];
     if(dearer){
       const mult = dearer.annual/win.annual, dq = dearer.score-win.score;
-      why += ` ${dearer.name} scores ${dq>0?dq.toFixed(1)+" points higher":"no better"} but costs ${mult.toFixed(1)}× as much` +
+      why += ` ${esc(dearer.name)} scores ${dq>0?dq.toFixed(1)+" points higher":"no better"} but costs ${mult.toFixed(1)}× as much` +
              (dq>0 ? ` — worth it only if those points are worth ${'$'+big(dearer.annual-win.annual)} a year to you.` : `.`);
     }
     const cheaper = res.filter(r=>!r.feasible && r.annual < win.annual)
@@ -350,11 +451,11 @@ function render(){
       const reason = !cheaper.okQual
         ? `misses the quality bar by ${(qBar-cheaper.score).toFixed(1)} points`
         : `takes ${cheaper.respSec.toFixed(1)}s to answer, past your ${maxSec}s limit`;
-      why += ` ${cheaper.name} would be cheaper still, but it ${reason}.`;
+      why += ` ${esc(cheaper.name)} would be cheaper still, but it ${reason}.`;
     }
     verdict = `<div class="verdict">
       <div class="kicker">Recommended</div>
-      <div class="pick">${win.name}</div>
+      <div class="pick">${esc(win.name)}</div>
       <p class="why">${why}</p>
       <div class="tiles">
         <div class="tile"><div class="k">Real cost</div><div class="v">$${money(win.true1k)}</div><div class="n">per 1,000 requests</div></div>
@@ -368,15 +469,15 @@ function render(){
 
   const chart = res.slice().sort((a,b)=>a.annual-b.annual).map(r=>`
     <div class="row">
-      <div class="nm" title="${r.name}">${r.name}</div>
+      <div class="nm" title="${esc(r.name)}">${esc(r.name)}</div>
       <div class="track"><div class="bar ${r.feasible?"":"out"}" style="width:${Math.max(1.5,r.annual/maxA*100)}%"
-        data-tip="${r.name}|${r.feasible?"Qualifies":"Does not qualify"} · $${money(r.true1k)} per 1k requests · ${r.totalGpu} GPU${r.totalGpu===1?"":"s"} at ${(r.u*100).toFixed(0)}% used"></div></div>
+        data-tip="${esc(r.name)}|${r.feasible?"Qualifies":"Does not qualify"} · $${money(r.true1k)} per 1k requests · ${r.totalGpu} GPU${r.totalGpu===1?"":"s"} at ${(r.u*100).toFixed(0)}% used"></div></div>
       <div class="vl">$${big(r.annual)}${r.feasible?"":' <span class="tag no">out</span>'}</div>
     </div>`).join("");
 
   const table = res.map(r=>`
     <tr>
-      <td>${r.name}<br><span style="font-size:11.5px;color:var(--muted)">${r.weights.toFixed(0)} GB weights · ${r.gpus} GPU/replica</span></td>
+      <td>${esc(r.name)}<br><span style="font-size:11.5px;color:var(--muted)">${r.weights.toFixed(0)} GB weights · ${r.gpus} GPU/replica</span></td>
       <td class="num">${r.score}%<br>${r.okQual?'<span class="tag ok">✓ clears</span>':'<span class="tag no">✕ short</span>'}</td>
       <td class="num">${r.respSec.toFixed(1)}s<br>${r.okLat?'<span class="tag ok">✓ in time</span>':'<span class="tag no">✕ slow</span>'}</td>
       <td class="num">${big(r.agg)}<br><span class="tag ${r.measured?"meas":"est"}">${r.measured?"measured":"estimate"}</span></td>
@@ -408,12 +509,13 @@ function render(){
       </table></div>
       <p class="note"><strong>Flat out $/1k</strong> assumes the GPU never idles — the figure every online calculator quotes. <strong>Real $/1k</strong> is what you will actually pay at your volume. The gap between them is idle capacity, and on-premise it is usually the largest line in the whole comparison.</p>
       ${anyEst?`<div class="warnbox"><strong>Some speeds are estimates.</strong> They come from memory bandwidth and can be out by half in either direction, which moves cost by the same factor. Run one model on your own hardware for an afternoon, type the real number in, and the ranking here becomes something you can defend in a board meeting.</div>`:""}
-    </div>`;
+    </div>` + sensCard(win);
 
   document.querySelectorAll("[data-tip]").forEach(el=>{
     el.onmousemove = e => {
       const t = $("tip"), [h,b] = el.dataset.tip.split("|");
-      t.innerHTML = `<b>${h}</b>${b}`;
+      // dataset decodes the entities back, so escape again on the way in
+      t.innerHTML = `<b>${esc(h)}</b>${esc(b)}`;
       t.style.opacity = 1;
       t.style.left = Math.min(e.clientX+14, innerWidth-265)+"px";
       t.style.top  = (e.clientY+16)+"px";

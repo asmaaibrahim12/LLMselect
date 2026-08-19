@@ -36,6 +36,7 @@ With the shipped defaults — 1,000,000 requests/month, 250 output tokens, 92% q
 | Utilisation | ~11% |
 | Llama 3.1 8B | ruled out — misses quality by 3.5 points |
 | Llama 3.3 70B | 2 GPUs, ~$25.6k/year |
+| Sensitivity | not stable — Qwen2.5 14B holds 50% of 8 scenarios, Llama 3.3 70B 25%, nothing qualifies 25% |
 
 Then change **requests per month to 200,000,000** and confirm the picture inverts: utilisation goes above 90%, the idle penalty drops to ~1.0×, and GPU counts separate sharply (roughly 13 / 22 / 68). If that inversion stops happening, the cost model is broken — that behaviour *is* the product.
 
@@ -50,9 +51,9 @@ Each of these is a session's work. Do them one at a time and check the numbers a
 3. **Cost of getting it wrong.** A field for what a bad answer costs (a re-do, a refund, a complaint) and a column showing expected cost including errors at each model's accuracy. Often flips the recommendation toward the better model — and it is the argument a CTO actually needs for the budget conversation.
 4. **Shared hardware.** Right now each model is priced on its own box. Let several use cases share one GPU and split the cost between them by how much capacity each consumes. This is where the real savings are at low utilisation.
 5. **Cloud API comparison column.** Per-million-token pricing entered by the user, next to the on-prem figure, so the buy-versus-build conversation happens in one table. Do not hardcode provider prices — they change and would go stale.
-6. **Sensitivity.** Show how the answer moves if the estimated speed is out by ±50%. If the recommendation is stable across that range, they can act on estimates and skip benchmarking; if it flips, they must measure first. That single indicator is worth more than a more precise estimator.
+6. ~~**Sensitivity.**~~ *Done.* Every estimated speed is varied by ±50% independently and the whole ranking re-run — all combinations up to 8 guesses, adversarial samples beyond that. The card says whether the recommendation survives that range, and names what wins instead when it does not. Measured speeds are held fixed.
 
-Item 6 is the one worth doing early if the tool is being used to make an actual purchase decision.
+Items 2–5 remain. Item 3 is the next one worth doing: it is the argument a CTO needs for the budget conversation.
 
 ## What not to build
 
