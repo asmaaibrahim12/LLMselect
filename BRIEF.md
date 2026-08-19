@@ -17,7 +17,8 @@ It is deliberately one file with no build step, no dependencies, and no network 
 3. **Never show the flat-out cost alone.** The whole point is the gap between "flat out" and "real" cost. Both figures appear together or neither does.
 4. **Estimated speed is always labelled.** A number the tool guessed and a number the user measured must never look the same. The `estimate` / `measured` tags carry that.
 5. **No invented quality scores.** Quality comes from the user's own test set. The tool must never ship a default or fetch a benchmark.
-6. **Feasibility before cost.** A model that misses the quality or latency bar is ruled out, not ranked cheaply.
+6. **Feasibility before cost.** A model that misses the quality or latency bar is ruled out, not ranked cheaply. Pricing errors does not change that — it re-ranks the models that qualify, it does not readmit one that failed.
+7. **The URL is the save file.** Scenarios travel as links, so a model name can arrive from someone else. Anything the user typed is escaped before it reaches the page.
 
 ## How to verify a change
 
@@ -36,7 +37,10 @@ With the shipped defaults — 1,000,000 requests/month, 250 output tokens, 92% q
 | Utilisation | ~11% |
 | Llama 3.1 8B | ruled out — misses quality by 3.5 points |
 | Llama 3.3 70B | 2 GPUs, ~$25.6k/year |
+| Cost of a wrong answer | 0 by default — every figure above is the hardware-only comparison |
 | Sensitivity | not stable — Qwen2.5 14B holds 50% of 8 scenarios, Llama 3.3 70B 25%, nothing qualifies 25% |
+
+Then set **cost of a wrong answer to $0.05** and confirm the recommendation flips to Llama 3.3 70B: it costs $12.9k a year more in hardware but saves $15.0k a year in re-dos, so it wins by ~$2.1k. That flip is the point of the field.
 
 Then change **requests per month to 200,000,000** and confirm the picture inverts: utilisation goes above 90%, the idle penalty drops to ~1.0×, and GPU counts separate sharply (roughly 13 / 22 / 68). If that inversion stops happening, the cost model is broken — that behaviour *is* the product.
 
@@ -48,12 +52,12 @@ Each of these is a session's work. Do them one at a time and check the numbers a
 
 1. ~~**Save and reload.**~~ *Done.* "Copy link" packs every input and candidate into the URL hash; opening such a link restores the scenario, and a malformed hash falls back to the defaults. No storage APIs — the URL is the save file.
 2. **Print / PDF layout.** These numbers end up in board decks. A `@media print` stylesheet that fits one page and drops the inputs.
-3. **Cost of getting it wrong.** A field for what a bad answer costs (a re-do, a refund, a complaint) and a column showing expected cost including errors at each model's accuracy. Often flips the recommendation toward the better model — and it is the argument a CTO actually needs for the budget conversation.
+3. ~~**Cost of getting it wrong.**~~ *Done.* One optional field, defaulting to 0 so the hardware-only comparison is unchanged until it is filled in. Ranking then runs on hardware plus errors, the chart stacks the two, and a callout states the trade in the form a budget conversation needs: this much more hardware buys that much less rework. Models below the quality bar are still ruled out first — errors do not buy a bad model back in.
 4. **Shared hardware.** Right now each model is priced on its own box. Let several use cases share one GPU and split the cost between them by how much capacity each consumes. This is where the real savings are at low utilisation.
 5. **Cloud API comparison column.** Per-million-token pricing entered by the user, next to the on-prem figure, so the buy-versus-build conversation happens in one table. Do not hardcode provider prices — they change and would go stale.
 6. ~~**Sensitivity.**~~ *Done.* Every estimated speed is varied by ±50% independently and the whole ranking re-run — all combinations up to 8 guesses, adversarial samples beyond that. The card says whether the recommendation survives that range, and names what wins instead when it does not. Measured speeds are held fixed.
 
-Items 2–5 remain. Item 3 is the next one worth doing: it is the argument a CTO needs for the budget conversation.
+Items 2, 4 and 5 remain.
 
 ## What not to build
 

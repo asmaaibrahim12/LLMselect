@@ -75,8 +75,10 @@
   .row{display:grid;grid-template-columns:170px 1fr 118px;gap:12px;align-items:center;margin-bottom:9px}
   @media(max-width:640px){.row{grid-template-columns:110px 1fr 96px;gap:8px}}
   .row .nm{font-size:13px;color:var(--ink-2);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .track{background:var(--grid);border-radius:4px;height:22px;position:relative}
-  .bar{height:22px;border-radius:0 4px 4px 0;background:var(--accent);transition:width .18s ease}
+  .track{background:var(--grid);border-radius:4px;height:22px;position:relative;display:flex;overflow:hidden}
+  .bar{height:22px;flex:0 0 auto;background:var(--accent);transition:width .18s ease}
+  .track .bar:last-child{border-radius:0 4px 4px 0}
+  .bar.err{background:var(--warn)}
   .bar.out{background:var(--muted);opacity:.55}
   .row .vl{font-size:13px;font-variant-numeric:tabular-nums;color:var(--ink)}
   .tag{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;white-space:nowrap}
@@ -121,6 +123,10 @@
       <div><label>Avg output length <span class="hint">tokens</span></label><input id="outTok" type="number" value="250" min="1"></div>
       <div><label>Quality bar <span class="hint">% on your test set</span></label><input id="qBar" type="number" value="92" min="0" max="100" step="0.5"></div>
       <div><label>Max response time <span class="hint">seconds</span></label><input id="maxSec" type="number" value="8" min="0.1" step="0.5"></div>
+    </div>
+    <div class="grid g4" style="margin-top:14px">
+      <div><label>Cost of a wrong answer <span class="hint">optional</span></label><input id="errCost" type="number" value="0" min="0" step="0.01"></div>
+      <div style="grid-column:span 3;align-self:end"><p class="note" style="margin:0 0 6px">What one bad answer costs you on average — the re-do, the refund, the complaint, the hour someone spends fixing it. Leave it at 0 to compare hardware alone.</p></div>
     </div>
     <p class="note">The quality bar is the only number nobody can supply for you. It means: on 100 real examples a domain expert has graded, what score is good enough to ship?</p>
   </div>
@@ -264,6 +270,7 @@ function compute(mult){
   const price    = num("gpuPrice"), life = Math.max(.1,num("life"));
   const kwh      = num("kwh"), pue = Math.max(1,num("pue"));
   const ovh      = num("ovh")/100, idle = Math.min(1,num("idle")/100);
+  const errCost  = Math.max(0, num("errCost"));
 
   // Cost of one GPU-hour, split into the part that does not vary with load and
   // the part that does. Keeping them apart is what makes the idle penalty visible.
@@ -294,11 +301,19 @@ function compute(mult){
     const annual   = totalGpu*(fixedPerGpuH+varPerGpuH(u))*HOURS;
     const true1k   = 1000*annual/volume;
 
+    // The bill nobody puts in the comparison: every answer the model gets wrong
+    // costs something downstream. At scale it dwarfs the hardware, and it is the
+    // only term that rewards a better model for being better.
+    const errRate  = Math.max(0, (100-r.score)/100);
+    const errAnnual= volume*errRate*errCost;
+    const total    = annual + errAnnual;
+    const all1k    = 1000*total/volume;
+
     const okQual   = r.score >= qBar;
     const okLat    = respSec <= maxSec;
     return {...r, weights, vramNeed, gpus, totalGpu, replicas, agg, measured, estAgg,
-            respSec, rps, u, peak1k, true1k, annual, okQual, okLat,
-            feasible: okQual && okLat, gap: true1k/peak1k};
+            respSec, rps, u, peak1k, true1k, annual, errRate, errAnnual, total, all1k,
+            okQual, okLat, feasible: okQual && okLat, gap: true1k/peak1k};
   });
 }
 
@@ -307,9 +322,12 @@ function compute(mult){
 // happens, ranking by cost is noise - take the best model you can have for free.
 const TIE = 1.10;
 
+// Ranking is on the all-in figure: hardware plus what the errors cost. With the
+// cost of a wrong answer left at 0 that is the hardware figure exactly, so the
+// comparison is unchanged until someone prices their errors.
 function choose(res){
-  const feas = res.filter(r=>r.feasible).sort((a,b)=>a.annual-b.annual);
-  const tied = feas.filter(r => r.annual <= feas[0]?.annual*TIE);
+  const feas = res.filter(r=>r.feasible).sort((a,b)=>a.total-b.total);
+  const tied = feas.filter(r => r.total <= feas[0]?.total*TIE);
   const win  = tied.length ? tied.slice().sort((a,b)=>b.score-a.score)[0] : feas[0];
   return {feas, tied, win, costTie: tied.length > 1};
 }
@@ -405,11 +423,29 @@ function sensCard(win){
   </div>`;
 }
 
+// The argument a CTO actually needs: what the extra hardware buys in avoided
+// errors, in the same currency as the invoice.
+function errCallout(win, feas){
+  const cheapHw = feas.slice().sort((a,b)=>a.annual-b.annual)[0];
+  const share   = win.total ? win.errAnnual/win.total : 0;
+  // The idle-capacity point still has to be made, but it is no longer the
+  // headline: it is the reason the hardware column stopped deciding anything.
+  const idleNote = win.u < 0.25
+    ? ` The hardware sits idle ${((1-win.u)*100).toFixed(0)}% of the time either way, which is why it is not what decides this.` : "";
+  if(cheapHw && cheapHw !== win){
+    const extraHw = win.annual - cheapHw.annual;
+    const saved   = cheapHw.errAnnual - win.errAnnual;
+    return `<div class="callout"><strong>The errors decide this one.</strong> ${esc(cheapHw.name)} is cheaper hardware — ${'$'+big(cheapHw.annual)} a year against ${'$'+big(win.annual)} — but it gets ${((cheapHw.errRate-win.errRate)*100).toFixed(1)} more answers wrong in every hundred. At ${'$'+money(num("errCost"))} a mistake that is ${'$'+big(saved)} a year of re-dos, for ${'$'+big(extraHw)} a year of extra hardware. Spending the ${'$'+big(extraHw)} is the cheaper decision by ${'$'+big(saved-extraHw)} a year.${idleNote}</div>`;
+  }
+  return `<div class="callout"><strong>Errors are ${(share*100).toFixed(0)}% of what this costs you.</strong> ${esc(win.name)} is both the cheapest hardware and the cheapest all in — ${'$'+big(win.errAnnual)} a year of wrong answers on top of ${'$'+big(win.annual)} of hardware. ${share>0.5 ? "More than half your bill is mistakes, so accuracy is where the money is: a fine-tune, better retrieval or a review step will beat any hardware saving on this list." : "Nothing on the list buys enough accuracy to be worth its extra hardware at this error price."}${idleNote}</div>`;
+}
+
 function render(){
   const res = compute();
   const qBar = num("qBar"), maxSec = num("maxSec");
   const {feas, tied, win, costTie} = choose(res);
-  const maxA = Math.max(...res.map(r=>r.annual), 1);
+  const priced = num("errCost") > 0;                 // are errors being paid for?
+  const maxA = Math.max(...res.map(r=>r.total), 1);
 
   let verdict;
   if(!win){
@@ -429,24 +465,28 @@ function render(){
       <div class="pick">Nothing clears your bar</div>
       <p class="why">Of ${res.length} candidate${res.length===1?"":"s"}, ${parts.join(" and ")}${overlap}. ${fix}</p></div>`;
   } else {
-    const rivals = feas.filter(r=>r!==win).sort((a,b)=>a.annual-b.annual);
+    const rivals = feas.filter(r=>r!==win).sort((a,b)=>a.total-b.total);
     let why;
     if(costTie){
       const others = tied.filter(r=>r!==win).map(r=>esc(r.name)).join(" and ");
       why = `It scores ${win.score}% against your ${qBar}% bar and answers in about ${win.respSec.toFixed(1)}s. ` +
-            `It costs the same as ${others} — within a rounding error of ${'$'+big(win.annual)} a year — because at this volume you are paying for the hardware, not for the tokens. ` +
+            `It costs the same as ${others} — within a rounding error of ${'$'+big(win.total)} a year — because ` +
+            (priced ? `what it saves in wrong answers it gives back in hardware. ` : `at this volume you are paying for the hardware, not for the tokens. `) +
             `When several models cost the same, take the best one.`;
+    } else if(priced){
+      why = `It clears your ${qBar}% quality bar at ${win.score}% and answers in about ${win.respSec.toFixed(1)}s, and once the ${(win.errRate*100).toFixed(1)}% of answers it gets wrong are paid for it is the cheapest option you have — ${'$'+big(win.total)} a year all in, of which ${'$'+big(win.annual)} is hardware and ${'$'+big(win.errAnnual)} is errors.`;
     } else {
       why = `It clears your ${qBar}% quality bar at ${win.score}% and answers in about ${win.respSec.toFixed(1)}s, and among the models that qualify it is the cheapest to run — ${'$'+big(win.annual)} a year on ${win.totalGpu} GPU${win.totalGpu===1?"":"s"}.`;
     }
-    const dearer = rivals.filter(r=>r.annual > win.annual*TIE)[0];
+    const dearer = rivals.filter(r=>r.total > win.total*TIE)[0];
     if(dearer){
-      const mult = dearer.annual/win.annual, dq = dearer.score-win.score;
-      why += ` ${esc(dearer.name)} scores ${dq>0?dq.toFixed(1)+" points higher":"no better"} but costs ${mult.toFixed(1)}× as much` +
-             (dq>0 ? ` — worth it only if those points are worth ${'$'+big(dearer.annual-win.annual)} a year to you.` : `.`);
+      const mult = dearer.total/win.total, dq = dearer.score-win.score;
+      const how = dq>0 ? dq.toFixed(1)+" points higher" : dq<0 ? (-dq).toFixed(1)+" points lower" : "the same";
+      why += ` ${esc(dearer.name)} scores ${how} but costs ${mult.toFixed(1)}× as much` +
+             (dq>0 ? ` — worth it only if those points are worth ${'$'+big(dearer.total-win.total)} a year to you${priced?" beyond the errors already priced in":""}.` : `.`);
     }
-    const cheaper = res.filter(r=>!r.feasible && r.annual < win.annual)
-                       .sort((a,b)=>a.annual-b.annual)[0];
+    const cheaper = res.filter(r=>!r.feasible && r.total < win.total)
+                       .sort((a,b)=>a.total-b.total)[0];
     if(cheaper){
       const reason = !cheaper.okQual
         ? `misses the quality bar by ${(qBar-cheaper.score).toFixed(1)} points`
@@ -458,21 +498,23 @@ function render(){
       <div class="pick">${esc(win.name)}</div>
       <p class="why">${why}</p>
       <div class="tiles">
-        <div class="tile"><div class="k">Real cost</div><div class="v">$${money(win.true1k)}</div><div class="n">per 1,000 requests</div></div>
+        <div class="tile"><div class="k">${priced?"All-in cost":"Real cost"}</div><div class="v">$${money(priced?win.all1k:win.true1k)}</div><div class="n">per 1,000 requests${priced?` — $${money(win.true1k)} of hardware, the rest wrong answers`:""}</div></div>
         <div class="tile"><div class="k">If it ran flat out</div><div class="v">$${money(win.peak1k)}</div><div class="n">per 1,000 — the number calculators quote</div></div>
         <div class="tile"><div class="k">Idle penalty</div><div class="v">${win.gap.toFixed(1)}×</div><div class="n">what you pay above the flat-out price, at ${(win.u*100).toFixed(0)}% used</div></div>
       </div>
-      ${win.u<0.25 ? `<div class="callout"><strong>Cost is not your deciding factor here.</strong> At ${(win.u*100).toFixed(0)}% utilisation the hardware is idle ${((1-win.u)*100).toFixed(0)}% of the time, so nearly every model on this list costs about the same to run — you are paying for the box, not the tokens. Two things follow. Pick on quality and latency, not price. And before buying anything, ask whether this workload justifies dedicated hardware at all, or whether it should share a box with your other models.</div>`
+      ${priced ? errCallout(win, feas) : win.u<0.25 ? `<div class="callout"><strong>Cost is not your deciding factor here.</strong> At ${(win.u*100).toFixed(0)}% utilisation the hardware is idle ${((1-win.u)*100).toFixed(0)}% of the time, so nearly every model on this list costs about the same to run — you are paying for the box, not the tokens. Two things follow. Pick on quality and latency, not price. And before buying anything, ask whether this workload justifies dedicated hardware at all, or whether it should share a box with your other models.</div>`
         : win.gap>1.5 ? `<div class="callout"><strong>Where the money actually goes.</strong> At ${(win.u*100).toFixed(0)}% utilisation you are buying ${win.totalGpu} GPU${win.totalGpu===1?"":"s"} and using a fraction of ${win.totalGpu===1?"it":"them"}. An idle GPU costs what a busy one costs — the capex, rack and support contract do not care. Before switching models to save money, check whether consolidating other workloads onto the same box saves more.</div>`:""}
     </div>`;
   }
 
-  const chart = res.slice().sort((a,b)=>a.annual-b.annual).map(r=>`
+  const chart = res.slice().sort((a,b)=>a.total-b.total).map(r=>`
     <div class="row">
       <div class="nm" title="${esc(r.name)}">${esc(r.name)}</div>
       <div class="track"><div class="bar ${r.feasible?"":"out"}" style="width:${Math.max(1.5,r.annual/maxA*100)}%"
-        data-tip="${esc(r.name)}|${r.feasible?"Qualifies":"Does not qualify"} · $${money(r.true1k)} per 1k requests · ${r.totalGpu} GPU${r.totalGpu===1?"":"s"} at ${(r.u*100).toFixed(0)}% used"></div></div>
-      <div class="vl">$${big(r.annual)}${r.feasible?"":' <span class="tag no">out</span>'}</div>
+        data-tip="${esc(r.name)}|${r.feasible?"Qualifies":"Does not qualify"} · $${money(r.true1k)} per 1k requests · ${r.totalGpu} GPU${r.totalGpu===1?"":"s"} at ${(r.u*100).toFixed(0)}% used"></div>${
+        priced?`<div class="bar err ${r.feasible?"":"out"}" style="width:${r.errAnnual/maxA*100}%"
+        data-tip="${esc(r.name)} — errors|${(r.errRate*100).toFixed(1)}% of answers wrong · $${big(r.errAnnual)} a year at $${money(num("errCost"))} each"></div>`:""}</div>
+      <div class="vl">$${big(r.total)}${r.feasible?"":' <span class="tag no">out</span>'}</div>
     </div>`).join("");
 
   const table = res.map(r=>`
@@ -484,17 +526,19 @@ function render(){
       <td class="num">${r.totalGpu}</td>
       <td class="num">${(r.u*100).toFixed(0)}%</td>
       <td class="num">$${money(r.peak1k)}</td>
-      <td class="num"><strong>$${money(r.true1k)}</strong></td>
+      <td class="num"><strong>$${money(priced ? r.all1k : r.true1k)}</strong></td>
       <td class="num">$${big(r.annual)}</td>
+      ${priced?`<td class="num">$${big(r.errAnnual)}<br><span style="font-size:11.5px;color:var(--muted)">${(r.errRate*100).toFixed(1)}% wrong</span></td>
+      <td class="num"><strong>$${big(r.total)}</strong></td>`:""}
     </tr>`).join("");
 
   const anyEst = res.some(r=>!r.measured);
 
   $("out").innerHTML = verdict + `
     <div class="card">
-      <h2>Annual cost — cheapest first</h2>
+      <h2>${priced?"Annual cost, errors included — cheapest first":"Annual cost — cheapest first"}</h2>
       <div class="chart">${chart}</div>
-      <p class="note">Solid bars qualify on both quality and speed. Grey bars are ruled out and are shown so you can see what you are turning down.</p>
+      <p class="note">Solid bars qualify on both quality and speed. Grey bars are ruled out and are shown so you can see what you are turning down.${priced?' The <span style="color:var(--warn);font-weight:600">amber</span> part of each bar is what the wrong answers cost.':""}</p>
     </div>
     <div class="card">
       <h2>The numbers</h2>
@@ -503,11 +547,13 @@ function render(){
         <thead><tr>
           <th>Model</th><th class="num">Quality</th><th class="num">Response</th>
           <th class="num">Speed tok/s</th><th class="num">GPUs</th><th class="num">Used</th>
-          <th class="num">Flat out $/1k</th><th class="num">Real $/1k</th><th class="num">Per year</th>
+          <th class="num">Flat out $/1k</th><th class="num">${priced?"All-in $/1k":"Real $/1k"}</th>
+          <th class="num">${priced?"Hardware/yr":"Per year"}</th>
+          ${priced?'<th class="num">Errors/yr</th><th class="num">All in/yr</th>':""}
         </tr></thead>
         <tbody>${table}</tbody>
       </table></div>
-      <p class="note"><strong>Flat out $/1k</strong> assumes the GPU never idles — the figure every online calculator quotes. <strong>Real $/1k</strong> is what you will actually pay at your volume. The gap between them is idle capacity, and on-premise it is usually the largest line in the whole comparison.</p>
+      <p class="note"><strong>Flat out $/1k</strong> assumes the GPU never idles — the figure every online calculator quotes. <strong>${priced?"All-in $/1k":"Real $/1k"}</strong> is what you will actually pay at your volume${priced?", errors included":""}. The gap between them is idle capacity, and on-premise it is usually the largest line in the whole comparison.${priced?" Errors/yr prices every wrong answer at what you said one costs; it is the only column that pays a better model back for being better.":""}</p>
       ${anyEst?`<div class="warnbox"><strong>Some speeds are estimates.</strong> They come from memory bandwidth and can be out by half in either direction, which moves cost by the same factor. Run one model on your own hardware for an afternoon, type the real number in, and the ranking here becomes something you can defend in a board meeting.</div>`:""}
     </div>` + sensCard(win);
 
@@ -529,7 +575,7 @@ $("theme").onclick = () => {
   document.documentElement.dataset.theme =
     document.documentElement.dataset.theme==="dark" ? "light" : "dark";
 };
-["volMonth","outTok","qBar","maxSec","gpuPrice","life","kwh","conc","ovh","pue","idle","vram","bw","tdp"]
+["volMonth","outTok","qBar","maxSec","errCost","gpuPrice","life","kwh","conc","ovh","pue","idle","vram","bw","tdp"]
   .forEach(id => $(id).oninput = render);
 
 // ---- The URL is the save file -------------------------------------------
@@ -537,14 +583,17 @@ $("theme").onclick = () => {
 // to a colleague or reopened next week. No storage APIs, no backend: if the
 // link travels, the numbers travel with it.
 const FIELDS = ["volMonth","outTok","qBar","maxSec","gpu","gpuPrice","life","kwh",
-                "conc","ovh","pue","idle","vram","bw","tdp"];
+                "conc","ovh","pue","idle","vram","bw","tdp","errCost"];
+// v1 links predate the cost-of-a-wrong-answer field. They are still good links:
+// read them as that field being zero, which is what they meant.
+const V1_LEN = FIELDS.length - 1;
 // encodeURIComponent leaves ~ alone, and ~ is our field separator inside a model.
 const encName = s => encodeURIComponent(s).replace(/~/g,"%7E");
 
 function encodeState(){
   const f = FIELDS.map(id => $(id).value).join(",");
   const m = rows.map(r => [encName(r.name), r.p, r.q, r.score, r.tps ?? ""].join("~")).join("|");
-  return "v=1&f=" + f + "&m=" + m;
+  return "v=2&f=" + f + "&m=" + m;
 }
 
 function shareUrl(){
@@ -559,9 +608,10 @@ function applyState(hash){
     const i = kv.indexOf("=");
     if(i>0) parts[kv.slice(0,i)] = kv.slice(i+1);
   });
-  if(parts.v !== "1" || !parts.f) return false;
+  if(!/^[12]$/.test(parts.v || "") || !parts.f) return false;
 
   const vals = parts.f.split(",");
+  if(parts.v === "1" && vals.length === V1_LEN) vals.push("0");
   if(vals.length !== FIELDS.length) return false;
   if(vals.some(v => v==="" || !isFinite(parseFloat(v)))) return false;
 
