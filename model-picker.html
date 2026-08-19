@@ -132,6 +132,12 @@
     /* the all-in columns make this the widest thing on the page, so the table
        sets its own size rather than being clipped by the scroll container */
     #out table{font-size:8.5px}
+    /* errors and cloud together make twelve columns; they only fit smaller */
+    #out table.wide{font-size:7.4px}
+    #out table.wide td{padding-right:3px}
+    #out table.wide th{padding-right:3px;font-size:7px}
+    #out table.wide td span[style]{font-size:6.8px!important}
+    #out table.wide .tag{font-size:6.8px;padding:1px 4px}
     #out table td span[style]{font-size:8px!important}
     #out [style*="overflow-x"]{overflow:visible!important}
     thead{display:table-header-group}
@@ -223,6 +229,18 @@
     <button class="btn" id="add" style="margin-top:14px">+ Add a model</button>
     <p class="note apiNote" style="display:none"><strong>API prices are yours to enter.</strong> Nothing is hardcoded here — published prices change monthly and any figure baked into this file would be wrong by the time you read it. Take the two numbers off the provider's pricing page for the model you would actually rent. The comparison covers tokens only: egress, rate-limit headroom and the fact that your data leaves the building are not priced.</p>
     <p class="note"><strong>Your score</strong> is the model's result on your graded examples — not a public benchmark. <strong>Speed</strong> auto-fills with a rough estimate from memory bandwidth; it is a shortlisting guess that can be wrong by half. Type a measured number over it as soon as you have one, and it will be marked as measured.</p>
+  </div>
+
+  <div class="card inputs">
+    <h2>4 · Sharing the hardware</h2>
+    <label style="display:flex;align-items:center;gap:7px;margin-bottom:14px">
+      <input type="checkbox" id="useShare" style="width:auto;margin:0"> This hardware also serves other workloads
+    </label>
+    <div class="grid g4" id="shareJob" style="display:none">
+      <div><label>Their requests per month</label><input id="otherReq" type="number" value="3000000" min="0"></div>
+      <div><label>Their avg output length <span class="hint">tokens</span></label><input id="otherTok" type="number" value="250" min="1"></div>
+      <div style="grid-column:span 2;align-self:end"><p class="note" style="margin:0 0 6px">Everything sharing the box is assumed to run the same model on the same deployment. Cost is split by how much of the capacity each side actually consumes, so your share falls as the box fills up. If the other work needs a different model, it needs a different box and this will flatter you.</p></div>
+    </div>
   </div>
 
   <div id="assume" class="printonly"></div>
@@ -333,6 +351,8 @@ function compute(mult){
   const ovh      = num("ovh")/100, idle = Math.min(1,num("idle")/100);
   const errCost  = Math.max(0, num("errCost"));
   const api      = $("useApi").checked, inTok = num("inTok");
+  const shared   = $("useShare").checked;
+  const otherTok = shared ? num("otherReq")*12*num("otherTok") : 0;   // tokens a year
 
   // Cost of one GPU-hour, split into the part that does not vary with load and
   // the part that does. Keeping them apart is what makes the idle penalty visible.
@@ -353,14 +373,22 @@ function compute(mult){
     const respSec  = outTok/perStream;
 
     const rps      = agg/outTok;
-    const capPer   = rps*SEC_H*HOURS;
-    const replicas = Math.max(1, Math.ceil(volume/capPer));
-    const capacity = capPer*replicas;
-    const u        = volume/capacity;
+    // Sizing works in tokens, not requests, because anything else sharing the
+    // box has its own response length. With nothing else on it this reduces to
+    // exactly the request-based figure it replaced.
+    const ourTokens= volume*outTok;
+    const demand   = ourTokens + otherTok;
+    const capPerTok= agg*SEC_H*HOURS;
+    const replicas = Math.max(1, Math.ceil(demand/capPerTok));
+    const u        = demand/(capPerTok*replicas);
     const totalGpu = replicas*gpus;
 
+    // The box costs what it costs; each workload carries the part of it that it
+    // consumes, idle capacity included, which is what makes sharing pay.
+    const shareFrac= demand > 0 ? ourTokens/demand : 1;
     const peak1k   = 1000*(fixedPerGpuH+varPerGpuH(1))*gpus/(rps*SEC_H);
-    const annual   = totalGpu*(fixedPerGpuH+varPerGpuH(u))*HOURS;
+    const boxAnnual= totalGpu*(fixedPerGpuH+varPerGpuH(u))*HOURS;
+    const annual   = boxAnnual*shareFrac;
     const true1k   = 1000*annual/volume;
 
     // The bill nobody puts in the comparison: every answer the model gets wrong
@@ -380,7 +408,7 @@ function compute(mult){
     const okLat    = respSec <= maxSec;
     return {...r, weights, vramNeed, gpus, totalGpu, replicas, agg, measured, estAgg,
             respSec, rps, u, peak1k, true1k, annual, errRate, errAnnual, total, all1k,
-            apiAnnual, api1k, apiTotal, okQual, okLat,
+            apiAnnual, api1k, apiTotal, boxAnnual, shareFrac, okQual, okLat,
             feasible: okQual && okLat, gap: true1k/peak1k};
   });
 }
@@ -542,12 +570,23 @@ function apiCallout(win, priced){
     Cost is not the whole argument: renting means no capacity to run idle, no procurement, and your data leaving the building.</div>`;
 }
 
+// What sharing actually buys. The whole box costs the same; your bill falls
+// because someone else is now carrying the part of it you were not using.
+function shareCallout(win){
+  const pctMine = win.shareFrac*100;
+  const theirs  = win.boxAnnual - win.annual;
+  return `<div class="callout"><strong>You are carrying ${pctMine.toFixed(0)}% of this hardware.</strong>
+    The box costs ${'$'+big(win.boxAnnual)} a year and runs at ${(win.u*100).toFixed(0)}% with both workloads on it. Your share of that is ${'$'+big(win.annual)} — the other work carries ${'$'+big(theirs)}, and every figure below is your share, not the whole box.
+    Splitting by consumption means the idle time is split too, so filling the box is what makes it cheap: the fuller it runs, the less of it anyone is paying for nothing.</div>`;
+}
+
 function render(){
   const res = compute();
   const qBar = num("qBar"), maxSec = num("maxSec");
   const {feas, tied, win, costTie} = choose(res);
   const priced = num("errCost") > 0;                 // are errors being paid for?
   const api    = $("useApi").checked;
+  const shared = $("useShare").checked;
   const maxA = Math.max(...res.map(r=>r.total), 1);
 
   let verdict;
@@ -605,8 +644,9 @@ function render(){
         <div class="tile"><div class="k">If it ran flat out</div><div class="v">$${money(win.peak1k)}</div><div class="n">per 1,000 — the number calculators quote</div></div>
         <div class="tile"><div class="k">Idle penalty</div><div class="v">${win.gap.toFixed(1)}×</div><div class="n">what you pay above the flat-out price, at ${(win.u*100).toFixed(0)}% used</div></div>
       </div>
+      ${shared ? shareCallout(win) : ""}
       ${api ? apiCallout(win, priced) : ""}
-      ${priced ? errCallout(win, feas) : win.u<0.25 ? `<div class="callout"><strong>Cost is not your deciding factor here.</strong> At ${(win.u*100).toFixed(0)}% utilisation the hardware is idle ${((1-win.u)*100).toFixed(0)}% of the time, so nearly every model on this list costs about the same to run — you are paying for the box, not the tokens. Two things follow. Pick on quality and latency, not price. And before buying anything, ask whether this workload justifies dedicated hardware at all, or whether it should share a box with your other models.</div>`
+      ${priced ? errCallout(win, feas) : shared ? "" : win.u<0.25 ? `<div class="callout"><strong>Cost is not your deciding factor here.</strong> At ${(win.u*100).toFixed(0)}% utilisation the hardware is idle ${((1-win.u)*100).toFixed(0)}% of the time, so nearly every model on this list costs about the same to run — you are paying for the box, not the tokens. Two things follow. Pick on quality and latency, not price. And before buying anything, ask whether this workload justifies dedicated hardware at all — section 4 will show what putting your other work on the same box does to this figure.</div>`
         : win.gap>1.5 ? `<div class="callout"><strong>Where the money actually goes.</strong> At ${(win.u*100).toFixed(0)}% utilisation you are buying ${win.totalGpu} GPU${win.totalGpu===1?"":"s"} and using a fraction of ${win.totalGpu===1?"it":"them"}. An idle GPU costs what a busy one costs — the capex, rack and support contract do not care. Before switching models to save money, check whether consolidating other workloads onto the same box saves more.</div>`:""}
     </div>`;
   }
@@ -648,12 +688,12 @@ function render(){
     <div class="card">
       <h2>The numbers</h2>
       <div style="overflow-x:auto">
-      <table>
+      <table class="${priced && api ? "wide" : ""}">
         <thead><tr>
           <th>Model</th><th class="num">Quality</th><th class="num">Response</th>
           <th class="num">Speed tok/s</th><th class="num">GPUs</th><th class="num">Used</th>
           <th class="num">Flat out $/1k</th><th class="num">${priced?"All-in $/1k":"Real $/1k"}</th>
-          <th class="num">${priced?"Hardware/yr":"Per year"}</th>
+          <th class="num">${priced?(shared?"Your hardware/yr":"Hardware/yr"):(shared?"Your share/yr":"Per year")}</th>
           ${priced?'<th class="num">Errors/yr</th><th class="num">All in/yr</th>':""}
           ${api?'<th class="num">Rented/yr</th>':""}
         </tr></thead>
@@ -696,24 +736,27 @@ $("theme").onclick = () => {
 ["volMonth","outTok","qBar","maxSec","errCost","inTok","gpuPrice","life","kwh","conc","ovh","pue","idle","vram","bw","tdp"]
   .forEach(id => $(id).oninput = render);
 $("useApi").onchange = () => { drawRows(); render(); };
+$("useShare").onchange = () => { $("shareJob").style.display = $("useShare").checked ? "grid" : "none"; render(); };
+["otherReq","otherTok"].forEach(id => $(id).oninput = render);
 
 // ---- The URL is the save file -------------------------------------------
 // Everything the user typed packs into the hash, so a scenario can be mailed
 // to a colleague or reopened next week. No storage APIs, no backend: if the
 // link travels, the numbers travel with it.
 const FIELDS = ["volMonth","outTok","qBar","maxSec","gpu","gpuPrice","life","kwh",
-                "conc","ovh","pue","idle","vram","bw","tdp","errCost","inTok"];
+                "conc","ovh","pue","idle","vram","bw","tdp","errCost","inTok",
+                "otherReq","otherTok"];
 // Older links are still good links. v1 predates the cost of a wrong answer and
 // v2 the cloud comparison; both are read as those features switched off, which
 // is what they meant when they were written.
-const OLD_LEN = {1: FIELDS.length-2, 2: FIELDS.length-1};
+const OLD_LEN = {1: FIELDS.length-4, 2: FIELDS.length-3, 3: FIELDS.length-2};
 // encodeURIComponent leaves ~ alone, and ~ is our field separator inside a model.
 const encName = s => encodeURIComponent(s).replace(/~/g,"%7E");
 
 function encodeState(){
   const f = FIELDS.map(id => $(id).value).join(",");
   const m = rows.map(r => [encName(r.name), r.p, r.q, r.score, r.tps ?? "", r.ai||0, r.ao||0].join("~")).join("|");
-  return "v=3&a=" + ($("useApi").checked?1:0) + "&f=" + f + "&m=" + m;
+  return "v=4&a=" + ($("useApi").checked?1:0) + ($("useShare").checked?1:0) + "&f=" + f + "&m=" + m;
 }
 
 function shareUrl(){
@@ -729,11 +772,12 @@ function applyState(hash){
     if(i>0) parts[kv.slice(0,i)] = kv.slice(i+1);
   });
   const v = parts.v;
-  if(!/^[123]$/.test(v || "") || !parts.f) return false;
+  if(!/^[1234]$/.test(v || "") || !parts.f) return false;
 
   const vals = parts.f.split(",");
-  if(vals.length === OLD_LEN[1] && v === "1") vals.push("0");        // errCost
-  if(vals.length === OLD_LEN[2] && v !== "3") vals.push("500");      // inTok
+  if(vals.length === OLD_LEN[1] && v === "1") vals.push("0");            // errCost
+  if(vals.length === OLD_LEN[2] && v <= "2")  vals.push("500");          // inTok
+  if(vals.length === OLD_LEN[3] && v <= "3")  vals.push("3000000","250");// other workload
   if(vals.length !== FIELDS.length) return false;
   if(vals.some(v => v==="" || !isFinite(parseFloat(v)))) return false;
 
@@ -757,7 +801,10 @@ function applyState(hash){
   }
 
   FIELDS.forEach((id,i) => { $(id).value = vals[i]; });
-  $("useApi").checked = parts.a === "1";
+  const flags = parts.a || "";
+  $("useApi").checked   = flags[0] === "1";
+  $("useShare").checked = flags[1] === "1";
+  $("shareJob").style.display = $("useShare").checked ? "grid" : "none";
   const gi = +vals[FIELDS.indexOf("gpu")];        // a GPU index we don't know -> Custom
   $("gpu").value = (gi >= 0 && gi < GPUS.length) ? gi : GPUS.length-1;
   if(models) rows = models;

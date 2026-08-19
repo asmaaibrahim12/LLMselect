@@ -8,7 +8,7 @@ Put this file next to `model-picker.html`, open the folder in Claude Code, and i
 
 A single self-contained HTML page that helps a team decide which open-weights LLM to run on their own hardware. They enter what the job needs, what their GPUs cost, and how each candidate scored on their own graded test set. It returns a recommendation, both cost figures, and the reasoning.
 
-It is deliberately one file with no build step, no dependencies, and no network calls. A startup CTO should be able to email it to a colleague who double-clicks it.
+It is deliberately one file with no build step, no dependencies, and no network calls. A startup CTO should be able to email it to a colleague who double-clicks it. Filled-in scenarios travel as links; the page prints to one side of A4 for the deck.
 
 ## Rules that must not break
 
@@ -38,6 +38,7 @@ With the shipped defaults — 1,000,000 requests/month, 250 output tokens, 92% q
 | Llama 3.1 8B | ruled out — misses quality by 3.5 points |
 | Llama 3.3 70B | 2 GPUs, ~$25.6k/year |
 | Cost of a wrong answer | 0 by default — every figure above is the hardware-only comparison |
+| Sharing on, 3,000,000 other requests/month | real cost ~$0.271 per 1k, 43% used, you carry 25% of the box |
 | Cloud comparison | off by default — the table gains a rented column only when it is switched on |
 | Print (Ctrl-P) | one A4 page, no input forms, assumptions summarised at the top |
 | Sensitivity | not stable — Qwen2.5 14B holds 50% of 8 scenarios, Llama 3.3 70B 25%, nothing qualifies 25% |
@@ -55,11 +56,11 @@ Each of these is a session's work. Do them one at a time and check the numbers a
 1. ~~**Save and reload.**~~ *Done.* "Copy link" packs every input and candidate into the URL hash; opening such a link restores the scenario, and a malformed hash falls back to the defaults. No storage APIs — the URL is the save file.
 2. ~~**Print / PDF layout.**~~ *Done.* Printing drops the forms, the controls and the explanatory notes, and puts a one-line summary of the assumptions at the top so the figures still mean something on their own. Fits one A4 page with three candidates, priced errors or not, and prints on white even from dark mode.
 3. ~~**Cost of getting it wrong.**~~ *Done.* One optional field, defaulting to 0 so the hardware-only comparison is unchanged until it is filled in. Ranking then runs on hardware plus errors, the chart stacks the two, and a callout states the trade in the form a budget conversation needs: this much more hardware buys that much less rework. Models below the quality bar are still ruled out first — errors do not buy a bad model back in.
-4. **Shared hardware.** Right now each model is priced on its own box. Let several use cases share one GPU and split the cost between them by how much capacity each consumes. This is where the real savings are at low utilisation.
+4. ~~**Shared hardware.**~~ *Done.* Section 4 adds other workloads to the same box. Sizing works in tokens rather than requests so the other side can have its own response length, and cost is split by consumed capacity — idle included, which is what makes filling the box pay. Every figure then shown is your share, and the columns say so.
 5. ~~**Cloud API comparison column.**~~ *Done.* Off by default; switching it on adds per-million input and output prices per candidate, an average input length, and a rented-per-year column beside the on-premise one. Prices are the user's to enter — nothing is hardcoded. The callout states which way the decision goes, and gives the crossover volume only when there is spare capacity for one to exist.
 6. ~~**Sensitivity.**~~ *Done.* Every estimated speed is varied by ±50% independently and the whole ranking re-run — all combinations up to 8 guesses, adversarial samples beyond that. The card says whether the recommendation survives that range, and names what wins instead when it does not. Measured speeds are held fixed.
 
-Item 4 remains — shared hardware, the one place with real savings left at low utilisation.
+The backlog is empty. Anything added from here should have to argue for itself against the rules above — particularly the first one.
 
 ## What not to build
 
