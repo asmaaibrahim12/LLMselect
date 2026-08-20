@@ -80,6 +80,13 @@
   .verdict .why{color:var(--ink-2);max-width:75ch}
   .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:16px 0 0}
   @media(max-width:640px){.tiles{grid-template-columns:1fr}}
+  @media(max-width:640px){
+    body{padding:16px 14px 40px}
+    h1{font-size:21px}
+    .verdict{padding:16px 16px}
+    .verdict .pick{font-size:22px}
+    .card{padding:16px 14px}
+  }
   .tile{border:1px solid var(--ring);border-radius:8px;padding:13px 15px;background:var(--plane)}
   .tile .k{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
   .tile .v{font-size:23px;font-weight:600;margin-top:3px;letter-spacing:-0.01em}
@@ -112,6 +119,20 @@
   #share .box{background:var(--surface-1);border:1px solid var(--ring);border-radius:var(--r);padding:20px;max-width:560px;width:100%}
   #share textarea{width:100%;height:90px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
     border:1px solid var(--axis);border-radius:7px;padding:8px 10px;background:var(--plane);color:var(--ink);resize:vertical}
+  #sticky{
+    position:fixed; left:0; right:0; top:0; z-index:12; display:flex; gap:14px; align-items:baseline;
+    justify-content:center; padding:9px 16px; background:var(--surface-1);
+    border-bottom:1px solid var(--ring); font-size:13.5px;
+    transform:translateY(-100%); transition:transform .18s ease;
+  }
+  #sticky.on{transform:none}
+  #sticky b{font-weight:650}
+  #sticky span:last-child{color:var(--ink-2);font-variant-numeric:tabular-nums}
+  @media print{#sticky{display:none!important}}
+  /* the candidates table is wide by nature; it scrolls inside its own card
+     rather than dragging the whole page sideways on a phone */
+  .tscroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .tscroll table{min-width:640px}
   .printonly{display:none}
 
   /* These numbers end up in board decks. One page, no forms, no controls -
@@ -172,7 +193,7 @@
   <div class="top">
     <div>
       <h1>Which model should we run?</h1>
-      <p class="sub">Enter what the job needs, what your hardware costs, and how each candidate scored on <em>your own</em> test set. This works out which model is cheapest among the ones that actually clear your bar — and what a request really costs once idle capacity is paid for.</p>
+      <p class="sub">What to run on your own GPUs, and what it will really cost.</p>
     </div>
     <div class="topbtns">
       <button class="btn" id="copy" title="Copy a link that reopens this exact scenario">Copy link</button>
@@ -180,19 +201,23 @@
     </div>
   </div>
 
+  <div id="assume" class="printonly"></div>
+  <div id="out"></div>
+
+  <p class="note inputs" style="margin:26px 0 12px">The answer above comes from what you enter below, and updates as you type. It ranks the models that actually clear your quality and latency bars, and prices each one at <em>your</em> volume — including the capacity you pay for and do not use. The scores are yours to supply: no benchmark ships with this.</p>
+
   <div class="card inputs">
     <h2>1 · The job</h2>
     <div class="grid g4">
-      <div><label>Requests per month</label><input id="volMonth" type="number" value="1000000" min="1"></div>
-      <div><label>Avg output length <span class="hint">tokens</span></label><input id="outTok" type="number" value="250" min="1"></div>
-      <div><label>Quality bar <span class="hint">% on your test set</span></label><input id="qBar" type="number" value="92" min="0" max="100" step="0.5"></div>
-      <div><label>Max response time <span class="hint">seconds</span></label><input id="maxSec" type="number" value="8" min="0.1" step="0.5"></div>
-      <div><label>Busiest hour <span class="hint">× the average</span></label><input id="peakRatio" type="number" value="1" min="1" step="0.5"></div>
+      <div><label for="volMonth">Requests per month</label><input id="volMonth" type="number" value="1000000" min="1"></div>
+      <div><label for="inTok">Avg input length <span class="hint">tokens in</span></label><input id="inTok" type="number" value="500" min="0"></div>
+      <div><label for="outTok">Avg output length <span class="hint">tokens out</span></label><input id="outTok" type="number" value="250" min="1"></div>
+      <div><label for="peakRatio">Busiest hour <span class="hint">× the average</span></label><input id="peakRatio" type="number" value="1" min="1" step="0.5"></div>
     </div>
     <div class="grid g4" style="margin-top:14px">
-      <div><label>Avg input length <span class="hint">tokens</span></label><input id="inTok" type="number" value="500" min="0"></div>
-      <div><label>Cost of a wrong answer <span class="hint">optional</span></label><input id="errCost" type="number" value="0" min="0" step="0.01"></div>
-      <div style="grid-column:span 2;align-self:end"><p class="note" style="margin:0 0 6px">Input length drives the prefill work the GPUs do before a single token comes back, and the KV cache they hold while answering. Cost of a wrong answer is the re-do, the refund, the complaint — leave it at 0 to compare hardware alone.</p></div>
+      <div><label for="qBar">Quality bar <span class="hint">% on your test set</span></label><input id="qBar" type="number" value="92" min="0" max="100" step="0.5"></div>
+      <div><label for="maxSec">Max response time <span class="hint">seconds</span></label><input id="maxSec" type="number" value="8" min="0.1" step="0.5"></div>
+      <div><label for="errCost">Cost of a wrong answer <span class="hint">optional</span></label><input id="errCost" type="number" value="0" min="0" step="0.01"></div>
     </div>
     <p class="note"><strong>Busiest hour</strong> is how much busier your peak is than your average — hardware has to be bought for the peak and is paid for all year. 1 means traffic is flat around the clock, which almost nothing is; office-hours traffic is usually 2× to 5×. It is left at 1 because guessing your traffic shape is not this tool's job, but leaving it there will understate what you need to buy.</p>
     <p class="note">The quality bar is the only number nobody can supply for you. It means: on 100 real examples a domain expert has graded, what score is good enough to ship?</p>
@@ -201,24 +226,24 @@
   <div class="card inputs">
     <h2>2 · The hardware</h2>
     <div class="grid g4">
-      <div><label>GPU</label><select id="gpu"></select></div>
-      <div><label>Price per GPU <span class="hint">what you paid</span></label><input id="gpuPrice" type="number" value="30000" min="1"></div>
-      <div><label>Depreciate over <span class="hint">years</span></label><input id="life" type="number" value="3" min="0.5" step="0.5"></div>
-      <div><label>Electricity <span class="hint">per kWh</span></label><input id="kwh" type="number" value="0.12" min="0" step="0.01"></div>
+      <div><label for="gpu">GPU</label><select id="gpu"></select></div>
+      <div><label for="gpuPrice">Price per GPU <span class="hint">what you paid</span></label><input id="gpuPrice" type="number" value="30000" min="1"></div>
+      <div><label for="life">Depreciate over <span class="hint">years</span></label><input id="life" type="number" value="3" min="0.5" step="0.5"></div>
+      <div><label for="kwh">Electricity <span class="hint">per kWh</span></label><input id="kwh" type="number" value="0.12" min="0" step="0.01"></div>
     </div>
     <details>
       <summary>Advanced — batching, power and overheads</summary>
       <div class="grid g4" style="margin-top:14px">
-        <div><label>Concurrent requests</label><input id="conc" type="number" value="16" min="1"></div>
-        <div><label>Overheads <span class="hint">% on top of capex</span></label><input id="ovh" type="number" value="25" min="0"></div>
-        <div><label>Cost of capital <span class="hint">% a year</span></label><input id="wacc" type="number" value="0" min="0" step="0.5"></div>
-        <div><label>PUE <span class="hint">cooling factor</span></label><input id="pue" type="number" value="1.4" min="1" step="0.05"></div>
-        <div><label>Idle draw <span class="hint">% of full</span></label><input id="idle" type="number" value="15" min="0" max="100"></div>
-        <div><label>Available <span class="hint">% of the year</span></label><input id="uptime" type="number" value="100" min="1" max="100" step="0.1"></div>
-        <div><label>VRAM <span class="hint">GB per GPU</span></label><input id="vram" type="number" value="80" min="1"></div>
-        <div><label>Bandwidth <span class="hint">GB/s</span></label><input id="bw" type="number" value="3350" min="1"></div>
-        <div><label>Power <span class="hint">watts</span></label><input id="tdp" type="number" value="700" min="1"></div>
-        <div><label>Compute <span class="hint">TFLOP/s, BF16</span></label><input id="tflops" type="number" value="989" min="1"></div>
+        <div><label for="conc">Concurrent requests</label><input id="conc" type="number" value="16" min="1"></div>
+        <div><label for="ovh">Overheads <span class="hint">% on top of capex</span></label><input id="ovh" type="number" value="25" min="0"></div>
+        <div><label for="wacc">Cost of capital <span class="hint">% a year</span></label><input id="wacc" type="number" value="0" min="0" step="0.5"></div>
+        <div><label for="pue">PUE <span class="hint">cooling factor</span></label><input id="pue" type="number" value="1.4" min="1" step="0.05"></div>
+        <div><label for="idle">Idle draw <span class="hint">% of full</span></label><input id="idle" type="number" value="15" min="0" max="100"></div>
+        <div><label for="uptime">Available <span class="hint">% of the year</span></label><input id="uptime" type="number" value="100" min="1" max="100" step="0.1"></div>
+        <div><label for="vram">VRAM <span class="hint">GB per GPU</span></label><input id="vram" type="number" value="80" min="1"></div>
+        <div><label for="bw">Bandwidth <span class="hint">GB/s</span></label><input id="bw" type="number" value="3350" min="1"></div>
+        <div><label for="tdp">Power <span class="hint">watts</span></label><input id="tdp" type="number" value="700" min="1"></div>
+        <div><label for="tflops">Compute <span class="hint">TFLOP/s, BF16</span></label><input id="tflops" type="number" value="989" min="1"></div>
       </div>
       <p class="note">Overheads cover rack, network, support contract and admin time — not electricity, which PUE already accounts for. Idle draw matters: a GPU sitting idle still costs nearly what a busy one does, which is the whole reason the two cost figures below differ.</p>
     </details>
@@ -230,12 +255,16 @@
       <label style="display:flex;align-items:center;gap:7px;margin:0 0 6px">
         <input type="checkbox" id="useApi" style="width:auto;margin:0"> Compare against renting the same model from a cloud API
       </label>
-      <div class="apiCol" style="display:none"><label>Input served from cache <span class="hint">%</span></label>
+      <label style="display:flex;align-items:center;gap:7px;margin:0 0 6px">
+        <input type="checkbox" id="useKv" style="width:auto;margin:0"> Count the KV cache in VRAM
+      </label>
+      <div class="apiCol" style="display:none"><label for="cacheShare">Input served from cache <span class="hint">%</span></label>
         <input id="cacheShare" type="number" value="0" min="0" max="100" style="width:130px"></div>
-      <div class="apiCol" style="display:none"><label>Cache read price <span class="hint">% of input price</span></label>
+      <div class="apiCol" style="display:none"><label for="cachePrice">Cache read price <span class="hint">% of input price</span></label>
         <input id="cachePrice" type="number" value="10" min="0" max="100" style="width:150px"></div>
 
     </div>
+    <div class="tscroll">
     <table id="cands">
       <thead><tr>
         <th style="width:23%">Model</th>
@@ -244,16 +273,17 @@
         <th style="width:14%">Precision</th>
         <th class="num" style="width:15%">Your score (%)</th>
         <th class="num" style="width:16%">Speed (tok/s)</th>
-        <th class="num" style="width:12%">KV MB/token</th>
+        <th class="num kvCol" style="width:12%;display:none">KV MB/token</th>
         <th class="num apiCol" style="width:13%;display:none">API $/M in</th>
         <th class="num apiCol" style="width:13%;display:none">API $/M out</th>
         <th style="width:5%"></th>
       </tr></thead>
       <tbody id="crows"></tbody>
     </table>
+    </div>
     <button class="btn" id="add" style="margin-top:14px">+ Add a model</button>
     <p class="note apiNote" style="display:none"><strong>API prices are yours to enter.</strong> Nothing is hardcoded here — published prices change monthly and any figure baked into this file would be wrong by the time you read it. Take the two numbers off the provider's pricing page for the model you would actually rent. The comparison covers tokens only: egress, rate-limit headroom and the fact that your data leaves the building are not priced.</p>
-    <p class="note"><strong>KV MB/token</strong> is the attention cache each sequence carries, and it is what makes high concurrency and long context expensive in VRAM: at your settings it is multiplied by concurrency and by input plus output length. Take it from the model card — 2 × layers × kv-heads × head-dim × bytes, in megabytes. Left empty it is not counted at all, and the GPU count below is a floor rather than an answer.</p>
+    <p class="note kvNote" style="display:none"><strong>KV MB/token</strong> is the attention cache each sequence carries, and it is what makes high concurrency and long context expensive in VRAM: at your settings it is multiplied by concurrency and by input plus output length. Take it from the model card — 2 × layers × kv-heads × head-dim × bytes, in megabytes. Left empty it is not counted at all, and the GPU count below is a floor rather than an answer.</p>
     <p class="note"><strong>Total</strong> is every parameter the weights contain; <strong>active</strong> is how many are used per token. For a dense model they are the same number. For a mixture-of-experts they are not, and the difference decides everything: the VRAM bill — and so the GPU count — follows the total, while speed follows the active part. A model can therefore need eight GPUs to hold and still answer quickly.</p>
     <p class="note"><strong>Your score</strong> is the model's result on your graded examples — not a public benchmark. <strong>Speed</strong> auto-fills with a rough estimate from memory bandwidth; it is a shortlisting guess that can be wrong by half. Type a measured number over it as soon as you have one, and it will be marked as measured.</p>
   </div>
@@ -264,20 +294,18 @@
       <input type="checkbox" id="useShare" style="width:auto;margin:0"> This hardware also serves other workloads
     </label>
     <div class="grid g4" id="shareJob" style="display:none">
-      <div><label>Their requests per month</label><input id="otherReq" type="number" value="3000000" min="0"></div>
-      <div><label>Their avg output length <span class="hint">tokens</span></label><input id="otherTok" type="number" value="250" min="1"></div>
+      <div><label for="otherReq">Their requests per month</label><input id="otherReq" type="number" value="3000000" min="0"></div>
+      <div><label for="otherTok">Their avg output length <span class="hint">tokens</span></label><input id="otherTok" type="number" value="250" min="1"></div>
       <div style="grid-column:span 2;align-self:end"><p class="note" style="margin:0 0 6px">Everything sharing the box is assumed to run the same model on the same deployment. Cost is split by how much of the capacity each side actually consumes, so your share falls as the box fills up. If the other work needs a different model, it needs a different box and this will flatter you.</p></div>
     </div>
   </div>
-
-  <div id="assume" class="printonly"></div>
-  <div id="out"></div>
 
   <p class="note" style="margin-top:26px">
     Estimated speeds assume the model is memory-bandwidth-bound during generation, which is the usual case, with batching gains that flatten as concurrency rises. VRAM figures cover weights plus roughly 20% runtime overhead and exclude the KV cache, which grows with concurrency and context length — so treat a model that only just fits as one that doesn't. Nothing here is a substitute for running the thing on your own box for an afternoon.
   </p>
 </div>
 <div id="tip"></div>
+<div id="sticky"><span id="stickyPick"></span><span id="stickyCost"></span></div>
 <div id="share"><div class="box">
   <h2 style="margin-bottom:8px">Link to this scenario</h2>
   <p class="note" style="margin-top:0">Copy this and send it to a colleague, or keep it to reopen these figures later. Everything you typed is in the link itself — nothing is stored anywhere.</p>
@@ -344,22 +372,24 @@ function buildGpu(){
 }
 
 function drawRows(){
-  const api = $("useApi").checked;
+  const api = $("useApi").checked, kvOn = $("useKv").checked;
+  document.querySelectorAll("th.kvCol").forEach(th => th.style.display = kvOn ? "table-cell" : "none");
+  document.querySelectorAll(".kvNote").forEach(n => n.style.display = kvOn ? "block" : "none");
   document.querySelectorAll("th.apiCol").forEach(th => th.style.display = api ? "table-cell" : "none");
   document.querySelectorAll("div.apiCol").forEach(d => d.style.display = api ? "block" : "none");
   document.querySelectorAll(".apiNote").forEach(n => n.style.display = api ? "block" : "none");
   $("crows").innerHTML = rows.map((r,i)=>`
     <tr>
-      <td><input data-i="${i}" data-f="name" value="${esc(r.name)}"></td>
-      <td><input data-i="${i}" data-f="p" type="number" min="0.1" step="0.1" value="${r.p}"></td>
-      <td><input data-i="${i}" data-f="act" type="number" min="0.1" step="0.1" value="${r.act ?? r.p}"></td>
-      <td><select data-i="${i}" data-f="q">${PREC.map((p,j)=>`<option value="${j}" ${j===r.q?"selected":""}>${p.n}</option>`).join("")}</select></td>
-      <td><input data-i="${i}" data-f="score" type="number" min="0" max="100" step="0.1" value="${r.score}"></td>
-      <td><input data-i="${i}" data-f="tps" type="number" min="1" placeholder="estimate" value="${r.tps ?? ""}"></td>
-      <td><input data-i="${i}" data-f="kv" type="number" min="0" step="0.01" placeholder="not counted" value="${r.kv ?? ""}"></td>
-      <td class="apiCol" style="display:${api?"table-cell":"none"}"><input data-i="${i}" data-f="ai" type="number" min="0" step="0.01" value="${r.ai ?? 0}"></td>
-      <td class="apiCol" style="display:${api?"table-cell":"none"}"><input data-i="${i}" data-f="ao" type="number" min="0" step="0.01" value="${r.ao ?? 0}"></td>
-      <td><button class="btn x" data-del="${i}" title="Remove">×</button></td>
+      <td><input aria-label="Model name" data-i="${i}" data-f="name" value="${esc(r.name)}"></td>
+      <td><input aria-label="Total parameters in billions" data-i="${i}" data-f="p" type="number" min="0.1" step="0.1" value="${r.p}"></td>
+      <td><input aria-label="Active parameters per token, in billions" data-i="${i}" data-f="act" type="number" min="0.1" step="0.1" value="${r.act ?? r.p}"></td>
+      <td><select aria-label="Precision" data-i="${i}" data-f="q">${PREC.map((p,j)=>`<option value="${j}" ${j===r.q?"selected":""}>${p.n}</option>`).join("")}</select></td>
+      <td><input aria-label="Your score on your own test set, percent" data-i="${i}" data-f="score" type="number" min="0" max="100" step="0.1" value="${r.score}"></td>
+      <td><input aria-label="Measured speed in tokens per second" data-i="${i}" data-f="tps" type="number" min="1" placeholder="estimate" value="${r.tps ?? ""}"></td>
+      <td class="kvCol" style="display:${kvOn?"table-cell":"none"}"><input aria-label="KV cache megabytes per token" data-i="${i}" data-f="kv" type="number" min="0" step="0.01" placeholder="from the model card" value="${r.kv ?? ""}"></td>
+      <td class="apiCol" style="display:${api?"table-cell":"none"}"><input aria-label="API input price per million tokens" data-i="${i}" data-f="ai" type="number" min="0" step="0.01" value="${r.ai ?? 0}"></td>
+      <td class="apiCol" style="display:${api?"table-cell":"none"}"><input aria-label="API output price per million tokens" data-i="${i}" data-f="ao" type="number" min="0" step="0.01" value="${r.ao ?? 0}"></td>
+      <td><button class="btn x" data-del="${i}" title="Remove" aria-label="Remove ${esc(r.name)}">×</button></td>
     </tr>`).join("");
   $("crows").querySelectorAll("input,select").forEach(el=>{
     el.oninput = () => {
@@ -416,7 +446,7 @@ function compute(mult){
     // The KV cache is per sequence in flight, and it is the term that punishes
     // high concurrency and long context. Read it off the model card:
     // 2 x layers x kv-heads x head-dim x bytes, in MB.
-    const kvGb     = (r.kv ?? 0)*conc*(inTok+outTok)/1000;
+    const kvGb     = $("useKv").checked ? (r.kv ?? 0)*conc*(inTok+outTok)/1000 : 0;
     const vramNeed = weights*1.2 + kvGb;       // weights, runtime overhead, KV
     // Tensor parallelism splits attention heads, so real deployments use 1, 2,
     // 4, 8 - never 3 or 5. Rounding up to the next power of two is what you
@@ -685,6 +715,8 @@ function render(){
     const list = gaps.length === 1 ? gaps[0]
       : gaps.slice(0,-1).join(", ") + " and " + gaps[gaps.length-1];
     $("assume").innerHTML = "";
+    $("stickyPick").innerHTML = "<b>Waiting on a number</b>";
+    $("stickyCost").textContent = list;
     $("out").innerHTML = `<div class="verdict" style="border-left-color:var(--warn)">
       <div class="kicker">Waiting on a number</div>
       <div class="pick">Nothing to work out yet</div>
@@ -828,6 +860,17 @@ function render(){
     ${api ? `${num("inTok")} input tokens, API prices as entered` : "on-premise only"} ·
     printed ${new Date().toLocaleDateString()}</p>`;
 
+  // The sticky line carries the answer down the page while the inputs that
+  // produced it are being edited.
+  if(win){
+    $("stickyPick").innerHTML = `<b>${esc(win.name)}</b>`;
+    $("stickyCost").textContent = `$${money(priced ? win.all1k : win.true1k)} per 1,000 · `
+      + `${win.score}% · ${win.respSec.toFixed(1)}s · ${win.totalGpu} GPU${win.totalGpu===1?"":"s"}`;
+  } else {
+    $("stickyPick").innerHTML = "<b>Nothing clears your bar</b>";
+    $("stickyCost").textContent = "";
+  }
+
   document.querySelectorAll("[data-tip]").forEach(el=>{
     el.onmousemove = e => {
       const t = $("tip"), [h,b] = el.dataset.tip.split("|");
@@ -851,6 +894,7 @@ $("theme").onclick = () => {
  "ovh","wacc","pue","idle","uptime","vram","bw","tdp","tflops","cacheShare","cachePrice"]
   .forEach(id => $(id).oninput = render);
 $("useApi").onchange = () => { drawRows(); render(); };
+$("useKv").onchange = () => { drawRows(); render(); };
 $("useShare").onchange = () => { $("shareJob").style.display = $("useShare").checked ? "grid" : "none"; render(); };
 ["otherReq","otherTok"].forEach(id => $(id).oninput = render);
 
@@ -877,7 +921,8 @@ function encodeState(){
   const f = FIELDS.map(id => $(id).value).join(",");
   const m = rows.map(r => [encName(r.name), r.p, r.q, r.score, r.tps ?? "", r.ai||0, r.ao||0,
                            r.act ?? r.p, r.kv ?? ""].join("~")).join("|");
-  return "v=6&a=" + ($("useApi").checked?1:0) + ($("useShare").checked?1:0) + "&f=" + f + "&m=" + m;
+  return "v=6&a=" + ($("useApi").checked?1:0) + ($("useShare").checked?1:0)
+                + ($("useKv").checked?1:0) + "&f=" + f + "&m=" + m;
 }
 
 function shareUrl(){
@@ -930,6 +975,7 @@ function applyState(hash){
   const flags = parts.a || "";
   $("useApi").checked   = flags[0] === "1";
   $("useShare").checked = flags[1] === "1";
+  $("useKv").checked    = flags[2] === "1";   // absent in links written before it existed
   $("shareJob").style.display = $("useShare").checked ? "grid" : "none";
   const gi = +vals[FIELDS.indexOf("gpu")];        // a GPU index we don't know -> Custom
   $("gpu").value = (gi >= 0 && gi < GPUS.length) ? gi : GPUS.length-1;
@@ -976,6 +1022,13 @@ $("shareClose").onclick = () => $("share").classList.remove("on");
 $("share").onclick = e => { if(e.target === $("share")) $("share").classList.remove("on"); };
 addEventListener("keydown", e => { if(e.key === "Escape") $("share").classList.remove("on"); });
 addEventListener("hashchange", () => { if(location.hash.length>1) applyState(location.hash); });
+
+// Show the sticky line only once the verdict itself has scrolled away.
+addEventListener("scroll", () => {
+  const v = document.querySelector("#out .verdict");
+  const gone = v ? v.getBoundingClientRect().bottom < 8 : false;
+  $("sticky").classList.toggle("on", gone);
+}, {passive:true});
 
 buildGpu(); drawRows();
 if(!(location.hash.length>1 && applyState(location.hash))) render();
