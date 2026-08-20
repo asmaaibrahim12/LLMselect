@@ -36,10 +36,15 @@ remains is bounded and stated.
 - **Prefill is modelled at 40% of peak arithmetic**, decode at 70% of peak
   bandwidth, tensor parallelism at 80%. Real kernels vary; these are the
   constants at the top of the script, exposed rather than buried.
-- **Mixture-of-experts decode is credited with every GPU's bandwidth.** At batch
-  this is close to right; for a single stream it is optimistic, because a token
-  touches a few experts and all-to-all routing is not modelled. Sparse models
-  are the least trustworthy latency figures on the page.
+- **Mixture-of-experts routing is charged at a flat 65%** of aggregate bandwidth
+  whenever a sparse model spans more than one GPU. That is a constant at the top
+  of the script, not a measurement: the real cost of all-to-all depends on the
+  interconnect. Sparse models remain the least trustworthy figures on the page,
+  and the one most worth replacing with a measured number.
+- **The task presets are shapes, not measurements.** They set input and output
+  length, latency bar and concurrency to typical values for that kind of work.
+  Your own traffic is the number that counts, and the quality score must come
+  from a test set for the same task.
 - **The KV cache is only counted if you enter it.** Left blank, the GPU count is
   a floor rather than an answer.
 - **The test-set score is used as the production error rate.** On 100 graded
@@ -63,10 +68,11 @@ With the shipped defaults — 1,000,000 requests/month, 500 input and 250 output
 | Flat-out cost per 1k | ~$0.135 |
 | Utilisation | ~12% average, ~12% at peak |
 | Kimi Linear 48B A3B | ruled out — misses quality by 3.0 points |
-| Kimi K2.6 | 8 GPUs, ~$101.3k/year — 500 GB held, 16 GB read per token |
+| Kimi K2.6 | 8 GPUs, ~$101.4k/year, ~6.5k tok/s, ~0.8s — 500 GB held, 16 GB read per token |
 | Sensitivity | not stable — Qwen2.5 14B and Kimi K2.6 split the eight combinations |
 | Sharing on, 3,000,000 other requests/month | real cost ~$0.272 per 1k, you carry about a quarter of the box |
-| At 200,000,000 on flat traffic | Qwen2.5 14B and Kimi K2.6 land within 0.3% of each other — $324.7k against $323.8k, 24 GPUs each — and the tie-break on quality decides it |
+| At 200,000,000 on flat traffic | Qwen2.5 14B wins on cost — $324.7k on 24 GPUs against Kimi K2.6's $432.2k on 32 — because routing a token between eight GPUs is not free |
+| Task presets | picking Code completion (2s bar) rules Qwen2.5 14B out at 6.9s and moves the recommendation to Kimi K2.6; picking Chat assistant restores every figure above |
 
 Then exercise each correction in turn and confirm it bites:
 

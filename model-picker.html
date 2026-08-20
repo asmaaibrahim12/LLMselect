@@ -208,6 +208,10 @@
 
   <div class="card inputs">
     <h2>1 · The job</h2>
+    <div class="grid g4" style="margin-bottom:14px">
+      <div style="grid-column:span 2"><label for="task">What is the work?</label><select id="task"></select></div>
+      <div style="grid-column:span 2;align-self:end"><p class="note" style="margin:0 0 6px">Picking one fills in the shape of the job below — how much goes in, how much comes back, how fast it has to answer, how many run at once. They are starting points from typical deployments, not measurements of yours: overwrite any of them and this switches to Custom.</p></div>
+    </div>
     <div class="grid g4">
       <div><label for="volMonth">Requests per month</label><input id="volMonth" type="number" value="1000000" min="1"></div>
       <div><label for="inTok">Avg input length <span class="hint">tokens in</span></label><input id="inTok" type="number" value="500" min="0"></div>
@@ -285,7 +289,7 @@
     <p class="note apiNote" style="display:none"><strong>API prices are yours to enter.</strong> Nothing is hardcoded here — published prices change monthly and any figure baked into this file would be wrong by the time you read it. Take the two numbers off the provider's pricing page for the model you would actually rent. The comparison covers tokens only: egress, rate-limit headroom and the fact that your data leaves the building are not priced.</p>
     <p class="note kvNote" style="display:none"><strong>KV MB/token</strong> is the attention cache each sequence carries, and it is what makes high concurrency and long context expensive in VRAM: at your settings it is multiplied by concurrency and by input plus output length. Take it from the model card — 2 × layers × kv-heads × head-dim × bytes, in megabytes. Left empty it is not counted at all, and the GPU count below is a floor rather than an answer.</p>
     <p class="note"><strong>Total</strong> is every parameter the weights contain; <strong>active</strong> is how many are used per token. For a dense model they are the same number. For a mixture-of-experts they are not, and the difference decides everything: the VRAM bill — and so the GPU count — follows the total, while speed follows the active part. A model can therefore need eight GPUs to hold and still answer quickly.</p>
-    <p class="note"><strong>Your score</strong> is the model's result on your graded examples — not a public benchmark. <strong>Speed</strong> auto-fills with a rough estimate from memory bandwidth; it is a shortlisting guess that can be wrong by half. Type a measured number over it as soon as you have one, and it will be marked as measured.</p>
+    <p class="note"><strong>Your score</strong> is the model's result on your graded examples for <em>this</em> job — not a public benchmark, and not its score on a different task. A model that summarises well may write poor code, and the ranking below is only as good as the match between your test set and the work you picked above. <strong>Speed</strong> auto-fills with a rough estimate from memory bandwidth; it is a shortlisting guess that can be wrong by half. Type a measured number over it as soon as you have one, and it will be marked as measured.</p>
   </div>
 
   <div class="card inputs">
@@ -330,6 +334,17 @@ const GPUS = [
   {n:"NVIDIA RTX 4090 24GB", vram:24,  bw:1008, tdp:450, tf:83},
   {n:"Custom / other",       vram:80,  bw:2000, tdp:500, tf:300}
 ];
+// The shape of the work, not a claim about it. Each preset moves the four
+// numbers that describe a workload; a summariser reads far more than it writes
+// and a code completion has to answer before the developer's finger moves.
+const TASKS = [
+  {n:"Chat assistant",              in:500,  out:250,  sec:8,  conc:16},
+  {n:"Code completion",             in:2000, out:100,  sec:2,  conc:32},
+  {n:"Retrieval / summarisation",   in:8000, out:400,  sec:20, conc:16},
+  {n:"Classification / extraction", in:800,  out:20,   sec:3,  conc:64},
+  {n:"Agentic / long reasoning",    in:2000, out:2000, sec:60, conc:8},
+  {n:"Custom",                      in:null, out:null, sec:null, conc:null}
+];
 const PREC = [
   {n:"FP16 / BF16", b:2},
   {n:"FP8 / INT8",  b:1},
@@ -342,6 +357,10 @@ const MEM_EFF = 0.70, TP_SCALE = 0.80, BATCH_HALF = 32;
 // Prefill is limited by arithmetic, not bandwidth: two flops per parameter per
 // token, at the fraction of peak a real kernel sustains.
 const PREFILL_MFU = 0.40;
+// A mixture-of-experts spread over several GPUs routes every token between
+// them. The aggregate-bandwidth figure ignores that all-to-all step, which is
+// why sparse models used to look faster than any of them measure.
+const MOE_SCALE = 0.65;
 const HOURS = 8760, SEC_H = 3600;
 
 // A shortlist that spans the three shapes a team actually chooses between: a
@@ -361,6 +380,25 @@ const big = v => v>=1e9? (v/1e9).toFixed(2)+"B" : v>=1e6? (v/1e6).toFixed(2)+"M"
 // Scenarios arrive by link now, so a model name can come from someone else.
 // Everything user-typed goes through this before it reaches innerHTML.
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function buildTask(){
+  $("task").innerHTML = TASKS.map((t,i)=>`<option value="${i}">${t.n}</option>`).join("");
+  $("task").onchange = () => {
+    const t = TASKS[+$("task").value];
+    if(t.in === null) return;                 // Custom changes nothing by itself
+    $("inTok").value = t.in; $("outTok").value = t.out;
+    $("maxSec").value = t.sec; $("conc").value = t.conc;
+    render();
+  };
+  // Editing any of the four by hand means this is no longer that preset.
+  ["inTok","outTok","maxSec","conc"].forEach(id => $(id).addEventListener("input", () => {
+    const t = TASKS[+$("task").value];
+    if(t && t.in !== null && !(num("inTok")===t.in && num("outTok")===t.out
+        && num("maxSec")===t.sec && num("conc")===t.conc)){
+      $("task").value = TASKS.length-1;
+    }
+  }));
+}
 
 function buildGpu(){
   $("gpu").innerHTML = GPUS.map((g,i)=>`<option value="${i}">${g.n}</option>`).join("");
@@ -453,7 +491,8 @@ function compute(mult){
     // would actually buy.
     const rawGpus  = Math.max(1, Math.ceil(vramNeed/vram));
     const gpus     = Math.pow(2, Math.ceil(Math.log2(rawGpus)));
-    const effBw    = bw*gpus*(gpus>1?TP_SCALE:1)*MEM_EFF;
+    const sparse   = (r.act ?? r.p) < r.p;
+    const effBw    = bw*gpus*(gpus>1?TP_SCALE:1)*MEM_EFF*(sparse && gpus>1 ? MOE_SCALE : 1);
     // Decode speed is set by what has to be read per token, not by what is
     // held. For a dense model those are the same; for a mixture-of-experts the
     // read is a fraction of the total, which is the whole point of the design.
@@ -905,15 +944,15 @@ $("useShare").onchange = () => { $("shareJob").style.display = $("useShare").che
 const FIELDS = ["volMonth","outTok","qBar","maxSec","gpu","gpuPrice","life","kwh",
                 "conc","ovh","pue","idle","vram","bw","tdp","errCost","inTok",
                 "otherReq","otherTok","peakRatio","wacc","uptime","tflops",
-                "cacheShare","cachePrice"];
+                "cacheShare","cachePrice","task"];
 // Older links are still good links. v1 predates the cost of a wrong answer and
 // v2 the cloud comparison; both are read as those features switched off, which
 // is what they meant when they were written.
 // Six fields arrived with the modelling fixes; links written before them are
 // read as those fixes switched off, which is exactly what they meant.
-const V6_ADDED = ["1","0","100","989","0","10"];
-const OLD_LEN = {1: FIELDS.length-10, 2: FIELDS.length-9, 3: FIELDS.length-8,
-                 4: FIELDS.length-6, 5: FIELDS.length-6};
+const V6_ADDED = ["1","0","100","989","0","10","0"];
+const OLD_LEN = {1: FIELDS.length-11, 2: FIELDS.length-10, 3: FIELDS.length-9,
+                 4: FIELDS.length-7, 5: FIELDS.length-7};
 // encodeURIComponent leaves ~ alone, and ~ is our field separator inside a model.
 const encName = s => encodeURIComponent(s).replace(/~/g,"%7E");
 
@@ -1030,7 +1069,7 @@ addEventListener("scroll", () => {
   $("sticky").classList.toggle("on", gone);
 }, {passive:true});
 
-buildGpu(); drawRows();
+buildTask(); buildGpu(); drawRows();
 if(!(location.hash.length>1 && applyState(location.hash))) render();
 </script>
 </body>

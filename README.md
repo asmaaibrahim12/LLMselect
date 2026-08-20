@@ -25,17 +25,18 @@ $1.06 per thousand requests against a flat-out figure of $0.135. That 7.9× gap
 is the largest line in most on-premise comparisons and it is the one nobody
 quotes. Both numbers always appear together.
 
-**What sparsity does to the bill.** VRAM follows a model's total parameters;
-speed follows how many are active per token. Enter both and a mixture-of-experts
-stops looking absurd: the shipped example needs eight GPUs to hold Kimi K2.6's
-500 GB of weights, yet it reads only 16 GB per token. At a million requests a
-month that is still an eight-GPU box at 1% utilisation and plainly the wrong
-buy; at 200 million it draws level with a dense 14B model — $323.8k against
-$324.7k a year, the same 24 GPUs — and wins the recommendation on quality
-rather than on price. Sparsity closes the gap; it does not walk away with it,
-because reading the prompt is compute-bound and the sparse model gets no
-discount there. Collapse total and active into one number, as most calculators
-do, and you would price this model thirty times too slow.
+**What sparsity does, and does not, do to the bill.** VRAM follows a model's
+total parameters; speed follows how many are active per token. Enter both and a
+mixture-of-experts stops looking absurd: the shipped example holds Kimi K2.6's
+500 GB of weights across eight GPUs yet reads only 16 GB per token, so it
+answers in under a second where a dense 14B model takes five. What sparsity does
+*not* do is make it cheap. Spreading experts across eight GPUs means routing
+every token between them, and once that overhead and the compute-bound work of
+reading the prompt are both charged, K2.6 costs $432.2k a year at 200M requests
+against the dense model's $324.7k. Sparsity buys speed and makes a very large
+model feasible at all; it does not beat a right-sized dense model on price.
+Collapse total and active into one number, as most calculators do, and you would
+price this model thirty times too slow in the other direction.
 
 **What the peak costs you.** Hardware is bought for the busiest hour and paid
 for all year. Tell it how much busier your peak is than your average and the
@@ -44,6 +45,14 @@ peak takes the shipped example from 24 GPUs to 72, and the bill from $324.7k to
 $932.1k. Every calculator that sizes on the annual average is wrong by that
 factor. The tool also says how full the busiest hour runs, and warns when a
 response-time promise stops being credible at that load.
+
+**What the work actually is.** A summariser reads eight thousand tokens and
+writes four hundred; a code completion reads two thousand and must answer in two
+seconds. Those shapes decide the answer, not just the model. Pick the job at the
+top and the tool fills in the traffic shape it implies — and the recommendation
+changes with it: the dense model that wins for chat misses a 2s code-completion
+bar entirely, so the shortlist reorders. The quality score you enter has to come
+from a test set for *that* job: a model that summarises well may write poor code.
 
 **Whether cost is even your deciding factor.** Below about 25% utilisation you
 are paying for the box, not the tokens, and most models on the list cost the
