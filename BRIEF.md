@@ -22,7 +22,7 @@ It is deliberately one file with no build step, no dependencies, and no network 
 8. **Total and active are different numbers.** VRAM, and so the GPU count, follows the total parameter count; decode speed follows what is read per token. Collapsing the two makes a mixture-of-experts look thirty times slower than it is.
 9. **No figure from a missing number.** An empty or zero input that would divide by zero stops the output and names the field. A cost worked out from a gap looks like an answer without being one.
 10. **The answer comes before the inputs.** The recommendation is the first thing on the page, and a sticky line carries it down while the figures behind it are being edited. A decision tool that makes you scroll past four forms to reach the decision is a form, not a tool.
-11. **The URL is the save file.** Scenarios travel as links, so a model name can arrive from someone else. Anything the user typed is escaped before it reaches the page.
+11. **The URL is the save file, and old links stay good.** A link written before a field existed is padded from the shipped defaults, so adding one never orphans a scenario already sent to a colleague. Test it by lopping the last value off a link's field list and reopening it — the rest must still restore. Scenarios travel as links, so a model name can arrive from someone else. Anything the user typed is escaped before it reaches the page.
 
 ## Known limits of the model
 

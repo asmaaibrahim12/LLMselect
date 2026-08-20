@@ -948,11 +948,12 @@ const FIELDS = ["volMonth","outTok","qBar","maxSec","gpu","gpuPrice","life","kwh
 // Older links are still good links. v1 predates the cost of a wrong answer and
 // v2 the cloud comparison; both are read as those features switched off, which
 // is what they meant when they were written.
-// Six fields arrived with the modelling fixes; links written before them are
-// read as those fixes switched off, which is exactly what they meant.
-const V6_ADDED = ["1","0","100","989","0","10","0"];
-const OLD_LEN = {1: FIELDS.length-11, 2: FIELDS.length-10, 3: FIELDS.length-9,
-                 4: FIELDS.length-7, 5: FIELDS.length-7};
+// Every field's shipped value, captured before any link is applied. A link
+// written before a field existed is padded from this, so adding a field can
+// never orphan the links already sent to colleagues - which hand-maintained
+// per-version tables did, quietly, the moment one was forgotten.
+let SHIPPED = null;
+const MIN_FIELDS = 15;      // the shortest format ever written
 // encodeURIComponent leaves ~ alone, and ~ is our field separator inside a model.
 const encName = s => encodeURIComponent(s).replace(/~/g,"%7E");
 
@@ -980,11 +981,13 @@ function applyState(hash){
   if(!/^[123456]$/.test(v || "") || !parts.f) return false;
 
   const vals = parts.f.split(",");
-  if(vals.length === OLD_LEN[1] && v === "1") vals.push("0");            // errCost
-  if(vals.length === OLD_LEN[2] && v <= "2")  vals.push("500");          // inTok
-  if(vals.length === OLD_LEN[3] && v <= "3")  vals.push("3000000","250");// other workload
-  if(vals.length === OLD_LEN[4] && v <= "5")  vals.push(...V6_ADDED);    // modelling fixes
-  if(vals.length !== FIELDS.length) return false;
+  if(vals.length < MIN_FIELDS || vals.length > FIELDS.length) return false;
+  while(vals.length < FIELDS.length){
+    const id = FIELDS[vals.length];
+    // A link that predates the task picker cannot say which task it was, so it
+    // says so rather than claiming one.
+    vals.push(id === "task" ? String(TASKS.length-1) : SHIPPED[vals.length]);
+  }
   if(vals.some(v => v==="" || !isFinite(parseFloat(v)))) return false;
 
   let models = null;
@@ -1070,6 +1073,7 @@ addEventListener("scroll", () => {
 }, {passive:true});
 
 buildTask(); buildGpu(); drawRows();
+SHIPPED = FIELDS.map(id => $(id).value);   // before any link touches the form
 if(!(location.hash.length>1 && applyState(location.hash))) render();
 </script>
 </body>
