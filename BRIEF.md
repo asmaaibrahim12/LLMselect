@@ -18,7 +18,8 @@ It is deliberately one file with no build step, no dependencies, and no network 
 4. **Estimated speed is always labelled.** A number the tool guessed and a number the user measured must never look the same. The `estimate` / `measured` tags carry that.
 5. **No invented quality scores.** Quality comes from the user's own test set. The tool must never ship a default or fetch a benchmark.
 6. **Feasibility before cost.** A model that misses the quality or latency bar is ruled out, not ranked cheaply. Pricing errors does not change that — it re-ranks the models that qualify, it does not readmit one that failed.
-7. **The URL is the save file.** Scenarios travel as links, so a model name can arrive from someone else. Anything the user typed is escaped before it reaches the page.
+7. **Both themes come from the tokens.** Light on bare `:root`, dark under both `prefers-color-scheme` and an explicit `data-theme`, print overriding both. No colour is defined only inside a theme block — that is how a page ends up with one theme's text on the other theme's background.
+8. **The URL is the save file.** Scenarios travel as links, so a model name can arrive from someone else. Anything the user typed is escaped before it reaches the page.
 
 ## How to verify a change
 

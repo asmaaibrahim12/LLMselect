@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -13,6 +13,19 @@
     --accent:#2a78d6; --accent-soft:#cde2fb;
     --good:#0ca30c; --warn:#fab219; --crit:#d03b3b; --good-text:#006300;
     --r:10px;
+  }
+  /* Dark comes from the tokens, twice over: once for a system preference that
+     nobody has overridden, once for an explicit choice. Components only ever
+     read the tokens, so both routes land in the same place. */
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-1:#1a1a19; --plane:#0d0d0d;
+    --ink:#ffffff; --ink-2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --axis:#383835; --ring:rgba(255,255,255,0.10);
+    --accent:#3987e5; --accent-soft:#184f95;
+    --good:#0ca30c; --warn:#fab219; --crit:#d03b3b; --good-text:#0ca30c;
+    }
   }
   :root[data-theme="dark"] {
     color-scheme: dark;
@@ -88,7 +101,6 @@
   .tag.meas{color:var(--good-text);background:color-mix(in srgb,var(--good) 12%,transparent)}
   .note{font-size:12.5px;color:var(--muted);margin-top:14px;max-width:80ch}
   .callout{background:var(--accent-soft);border-radius:8px;padding:14px 16px;margin-top:16px;font-size:14px;color:var(--ink)}
-  :root[data-theme="dark"] .callout{color:#fff}
   .top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
   #tip{position:fixed;pointer-events:none;opacity:0;transition:opacity .12s;background:var(--surface-1);border:1px solid var(--ring);border-radius:7px;padding:8px 11px;font-size:12.5px;box-shadow:0 6px 20px rgba(0,0,0,.14);z-index:9;max-width:250px}
   #tip b{display:block;margin-bottom:3px}
@@ -105,7 +117,9 @@
   /* These numbers end up in board decks. One page, no forms, no controls -
      just the recommendation, the figures behind it and the assumptions. */
   @media print{
-    :root, :root[data-theme="dark"]{
+    /* same specificity as the system-dark rule above, and later in the file, so
+       a dark screen still prints on white paper */
+    :root, :root[data-theme="dark"], :root:not([data-theme="light"]){
       color-scheme:light;
       --surface-1:#fff; --plane:#fff; --ink:#000; --ink-2:#333; --muted:#666;
       --grid:#dcdcd6; --axis:#bbb; --ring:#c8c8c2; --accent:#2a78d6; --accent-soft:#e8f1fd;
@@ -730,8 +744,9 @@ function render(){
 
 $("add").onclick = () => { rows.push({name:"New model",p:8,q:2,score:90,tps:null,ai:0,ao:0}); drawRows(); render(); };
 $("theme").onclick = () => {
-  document.documentElement.dataset.theme =
-    document.documentElement.dataset.theme==="dark" ? "light" : "dark";
+  const showing = document.documentElement.dataset.theme ||
+    (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  document.documentElement.dataset.theme = showing==="dark" ? "light" : "dark";
 };
 ["volMonth","outTok","qBar","maxSec","errCost","inTok","gpuPrice","life","kwh","conc","ovh","pue","idle","vram","bw","tdp"]
   .forEach(id => $(id).oninput = render);
@@ -851,7 +866,6 @@ $("share").onclick = e => { if(e.target === $("share")) $("share").classList.rem
 addEventListener("keydown", e => { if(e.key === "Escape") $("share").classList.remove("on"); });
 addEventListener("hashchange", () => { if(location.hash.length>1) applyState(location.hash); });
 
-if(matchMedia("(prefers-color-scheme: dark)").matches) document.documentElement.dataset.theme="dark";
 buildGpu(); drawRows();
 if(!(location.hash.length>1 && applyState(location.hash))) render();
 </script>
