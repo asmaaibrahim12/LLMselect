@@ -427,6 +427,22 @@ function compute(mult){
   });
 }
 
+// A field left empty mid-edit used to divide by zero and print $Infinity or
+// $NaN, which looks like an answer. Nothing is worth showing until these are
+// real numbers, and saying which one is missing beats a plausible-looking lie.
+// A price of 0 is left alone: "we already own the GPUs" is a real answer.
+// These five are not - an empty one was being silently clamped into a figure
+// that looked plausible and was not.
+const REQUIRED = [["volMonth","requests per month"], ["outTok","average output length"],
+                  ["vram","VRAM per GPU"], ["bw","memory bandwidth"],
+                  ["life","depreciation period"], ["conc","concurrent requests"]];
+
+function missingInputs(){
+  const gaps = REQUIRED.filter(([id]) => !(num(id) > 0)).map(([,label]) => label);
+  if(rows.some(r => !(r.p > 0))) gaps.push("model size in billions of parameters");
+  return gaps;
+}
+
 // Below a certain volume every model that fits on the same GPU count costs the
 // same, because you are paying for the box whether you use it or not. When that
 // happens, ranking by cost is noise - take the best model you can have for free.
@@ -595,6 +611,18 @@ function shareCallout(win){
 }
 
 function render(){
+  const gaps = missingInputs();
+  if(gaps.length){
+    const list = gaps.length === 1 ? gaps[0]
+      : gaps.slice(0,-1).join(", ") + " and " + gaps[gaps.length-1];
+    $("assume").innerHTML = "";
+    $("out").innerHTML = `<div class="verdict" style="border-left-color:var(--warn)">
+      <div class="kicker">Waiting on a number</div>
+      <div class="pick">Nothing to work out yet</div>
+      <p class="why">Fill in the ${list} and the figures come back. Everything else you have typed is still here — nothing is shown in the meantime because a cost worked out from a missing number would look like an answer without being one.</p>
+    </div>`;
+    return;
+  }
   const res = compute();
   const qBar = num("qBar"), maxSec = num("maxSec");
   const {feas, tied, win, costTie} = choose(res);

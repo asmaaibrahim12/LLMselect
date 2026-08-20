@@ -19,7 +19,27 @@ It is deliberately one file with no build step, no dependencies, and no network 
 5. **No invented quality scores.** Quality comes from the user's own test set. The tool must never ship a default or fetch a benchmark.
 6. **Feasibility before cost.** A model that misses the quality or latency bar is ruled out, not ranked cheaply. Pricing errors does not change that — it re-ranks the models that qualify, it does not readmit one that failed.
 7. **Both themes come from the tokens.** Light on bare `:root`, dark under both `prefers-color-scheme` and an explicit `data-theme`, print overriding both. No colour is defined only inside a theme block — that is how a page ends up with one theme's text on the other theme's background.
-8. **The URL is the save file.** Scenarios travel as links, so a model name can arrive from someone else. Anything the user typed is escaped before it reaches the page.
+8. **No figure from a missing number.** An empty or zero input that would divide by zero stops the output and names the field. A cost worked out from a gap looks like an answer without being one.
+9. **The URL is the save file.** Scenarios travel as links, so a model name can arrive from someone else. Anything the user typed is escaped before it reaches the page.
+
+## Known limits of the model
+
+These are deliberate simplifications, not bugs, but they bound what the answer
+is worth. Anyone quoting these figures should know them.
+
+- **Input tokens are not modelled on the on-premise side.** Sizing counts output
+  tokens only; prefill is ignored. The cloud comparison *does* charge for input
+  tokens, so at 500 input tokens the box is understated by roughly 20% and the
+  buy-versus-build call leans toward owning.
+- **Latency assumes the batch is always full.** Response time is computed at the
+  stated concurrency even at 11% utilisation, where real concurrency is nearer
+  1.7 and a request would come back in about 3.0s rather than 4.5s. This errs
+  safe, but it can rule out a model on latency that would have passed.
+- **The test-set score is used as the production error rate.** On 100 graded
+  examples the sampling error is around ±3 points — wider than the 2.5-point gap
+  that decides the recommendation once errors are priced.
+- **KV cache is excluded from VRAM**, and there is no cost of capital on the
+  capex.
 
 ## How to verify a change
 
