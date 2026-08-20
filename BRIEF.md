@@ -25,49 +25,60 @@ It is deliberately one file with no build step, no dependencies, and no network 
 
 ## Known limits of the model
 
-These are deliberate simplifications, not bugs, but they bound what the answer
-is worth. Anyone quoting these figures should know them.
+Each of the seven findings from the equation review has been addressed. What
+remains is bounded and stated.
 
-- **Input tokens are not modelled on the on-premise side.** Sizing counts output
-  tokens only; prefill is ignored. The cloud comparison *does* charge for input
-  tokens, so at 500 input tokens the box is understated by roughly 20% and the
-  buy-versus-build call leans toward owning.
-- **Latency assumes the batch is always full.** Response time is computed at the
-  stated concurrency even at 11% utilisation, where real concurrency is nearer
-  1.7 and a request would come back in about 3.0s rather than 4.5s. This errs
-  safe, but it can rule out a model on latency that would have passed.
+- **Latency is service time, not response time.** The tool now reports how full
+  the busiest hour is, and warns above 80% that waiting for a slot is excluded.
+  It does not model the queue itself: continuous batching is not an M/M/1
+  server, and putting a precise number on the wait would be inventing one.
+- **Prefill is modelled at 40% of peak arithmetic**, decode at 70% of peak
+  bandwidth, tensor parallelism at 80%. Real kernels vary; these are the
+  constants at the top of the script, exposed rather than buried.
+- **Mixture-of-experts decode is credited with every GPU's bandwidth.** At batch
+  this is close to right; for a single stream it is optimistic, because a token
+  touches a few experts and all-to-all routing is not modelled. Sparse models
+  are the least trustworthy latency figures on the page.
+- **The KV cache is only counted if you enter it.** Left blank, the GPU count is
+  a floor rather than an answer.
 - **The test-set score is used as the production error rate.** On 100 graded
-  examples the sampling error is around ±3 points — wider than the 2.5-point gap
-  that decides the recommendation once errors are priced.
-- **KV cache is excluded from VRAM**, and there is no cost of capital on the
-  capex.
+  examples, sampling error is around ±3 points; the sensitivity card now says so
+  whenever a candidate sits within 1.5 points of the bar.
+- **Shared hardware splits by consumed GPU-seconds**, so a workload that causes
+  the peak pays only for its average share of it.
 
-## How to verify a change
+## How to verify a change## How to verify a change
 
 There are no unit tests. There is something better and faster: open the file in a browser and check these numbers, which come from the defaults it ships with.
 
-With the shipped defaults — 1,000,000 requests/month, 250 output tokens, 92% quality bar, 8s limit, H100 SXM at $30,000 over 3 years, $0.12/kWh:
+With the shipped defaults — 1,000,000 requests/month, 500 input and 250 output tokens, 92% quality bar, 8s limit, flat traffic, H100 SXM at $30,000 over 3 years, $0.12/kWh, no cost of capital:
 
 | Check | Expected |
 |---|---|
 | Recommendation | Qwen2.5 14B |
-| Its estimated speed | ~893 tok/s |
-| Its response time | ~4.5s |
+| Its estimated decode speed | ~893 tok/s |
+| Its response time | ~5.0s — service time, prefill included |
 | Real cost per 1k | ~$1.06 |
-| Flat-out cost per 1k | ~$0.120 |
-| Idle penalty | ~8.8× |
-| Utilisation | ~11% |
+| Flat-out cost per 1k | ~$0.135 |
+| Utilisation | ~12% average, ~12% at peak |
 | Kimi Linear 48B A3B | ruled out — misses quality by 3.0 points |
-| Kimi K2.6 | 8 GPUs, ~$101.3k/year — 500 GB of weights, but only 16 GB read per token |
-| Cost of a wrong answer | 0 by default — every figure above is the hardware-only comparison |
-| Cloud comparison | off by default — the table gains a rented column only when it is switched on |
-| Sharing on, 3,000,000 other requests/month | real cost ~$0.271 per 1k, 43% used, you carry 25% of the box |
-| Print (Ctrl-P) | one A4 page, no input forms, assumptions summarised at the top |
-| Sensitivity | not stable — Qwen2.5 14B and Kimi K2.6 win four of the eight combinations each |
+| Kimi K2.6 | 8 GPUs, ~$101.3k/year — 500 GB held, 16 GB read per token |
+| Sensitivity | not stable — Qwen2.5 14B and Kimi K2.6 split the eight combinations |
 
-Then set **cost of a wrong answer to $0.20** and confirm the recommendation flips to Kimi K2.6: it costs $88.6k a year more in hardware but gets 3.8 fewer answers wrong in every hundred, which at that price is worth more. Below about $0.19 it does not flip. That crossover is the point of the field.
+Then exercise each correction in turn and confirm it bites:
 
-Then change **requests per month to 200,000,000** and confirm the picture inverts: utilisation goes above 75% for every candidate, the idle penalty drops to ~1.0×, and **the recommendation itself changes to Kimi K2.6** at ~$0.090 per 1k against Qwen's ~$0.124. That inversion is the product. A trillion-parameter model beating a 14B one on cost per request is not a bug: it reads 16 GB per token against the dense model's 28 GB, and at high utilisation the token cost is what you are paying. GPU counts separate to roughly 3 / 22 / 16.
+| Change | Expected |
+|---|---|
+| **Busiest hour → 3×** | Qwen's peak load goes 12% → 36%; nothing else moves at this volume |
+| **Cost of capital → 15%** | Qwen $12.8k → **$16.7k** a year, $1.06 → $1.39 per 1k |
+| **KV MB/token → 0.197 on Qwen, concurrency → 128** | 19 GB of KV appears beside the weights, and Qwen fails the latency bar at 19.5s |
+| **Requests → 200,000,000 with a 3× peak** | Qwen needs **72 GPUs** and ~$932k a year, against 22 GPUs and $297k when peaks were ignored — the correction is a factor of three |
+| **Same, then read the warning** | "At the busiest hour this runs at 95% of capacity" — the queueing caveat |
+| **Cached input → 60% at 10% of list** | the rented figure drops by roughly a third |
+
+The 200M case is the one that matters: it is where the old model was most wrong,
+and the new one is three times more expensive because hardware is bought for the
+peak and paid for all year.
 
 If Claude Code has browser tools, ask it to screenshot the page after every visual change and actually look at it. The math can be right while the layout is broken.
 

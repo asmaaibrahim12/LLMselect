@@ -33,6 +33,14 @@ month it is *cheaper per request* than a dense 14B model, and the recommendation
 changes to it. Collapse the two numbers into one, as most calculators do, and
 you would price it thirty times too slow.
 
+**What the peak costs you.** Hardware is bought for the busiest hour and paid
+for all year. Tell it how much busier your peak is than your average and the
+GPU count follows the peak: at 200M requests a month, a normal 3× office-hours
+peak takes the shipped example from 22 GPUs to 72, and the bill from $297k to
+$932k. Every calculator that sizes on the annual average is wrong by that
+factor. The tool also says how full the busiest hour runs, and warns when a
+response-time promise stops being credible at that load.
+
 **Whether cost is even your deciding factor.** Below about 25% utilisation you
 are paying for the box, not the tokens, and most models on the list cost the
 same. The tool says so plainly and tells you to decide on quality instead.
@@ -50,9 +58,13 @@ recommendation from Qwen2.5 14B to the far larger Kimi K2.6, which gets 3.8
 fewer answers wrong in every hundred. This is usually the argument that wins the
 budget conversation.
 
-**Buy versus build.** Enter the per-million-token prices for renting the same
-model and the two sit in one table. No provider prices are baked in; they change
-monthly and would be stale before you opened the file.
+**Buy versus build, without a thumb on the scale.** Enter the per-million-token
+prices for renting the same model and the two sit in one table. No provider
+prices are baked in; they change monthly and would be stale before you opened
+the file. Both sides are costed honestly: the on-premise figure includes the
+prefill work of reading the prompt, and the rented figure accounts for cached
+input at whatever share and discount your provider gives you — the two
+corrections that used to push the answer toward owning.
 
 **What sharing the box saves.** Put other workloads on the same hardware and the
 cost splits by consumed capacity. On the defaults, adding 3M requests a month of

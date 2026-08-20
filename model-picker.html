@@ -187,11 +187,14 @@
       <div><label>Avg output length <span class="hint">tokens</span></label><input id="outTok" type="number" value="250" min="1"></div>
       <div><label>Quality bar <span class="hint">% on your test set</span></label><input id="qBar" type="number" value="92" min="0" max="100" step="0.5"></div>
       <div><label>Max response time <span class="hint">seconds</span></label><input id="maxSec" type="number" value="8" min="0.1" step="0.5"></div>
+      <div><label>Busiest hour <span class="hint">× the average</span></label><input id="peakRatio" type="number" value="1" min="1" step="0.5"></div>
     </div>
     <div class="grid g4" style="margin-top:14px">
+      <div><label>Avg input length <span class="hint">tokens</span></label><input id="inTok" type="number" value="500" min="0"></div>
       <div><label>Cost of a wrong answer <span class="hint">optional</span></label><input id="errCost" type="number" value="0" min="0" step="0.01"></div>
-      <div style="grid-column:span 3;align-self:end"><p class="note" style="margin:0 0 6px">What one bad answer costs you on average — the re-do, the refund, the complaint, the hour someone spends fixing it. Leave it at 0 to compare hardware alone.</p></div>
+      <div style="grid-column:span 2;align-self:end"><p class="note" style="margin:0 0 6px">Input length drives the prefill work the GPUs do before a single token comes back, and the KV cache they hold while answering. Cost of a wrong answer is the re-do, the refund, the complaint — leave it at 0 to compare hardware alone.</p></div>
     </div>
+    <p class="note"><strong>Busiest hour</strong> is how much busier your peak is than your average — hardware has to be bought for the peak and is paid for all year. 1 means traffic is flat around the clock, which almost nothing is; office-hours traffic is usually 2× to 5×. It is left at 1 because guessing your traffic shape is not this tool's job, but leaving it there will understate what you need to buy.</p>
     <p class="note">The quality bar is the only number nobody can supply for you. It means: on 100 real examples a domain expert has graded, what score is good enough to ship?</p>
   </div>
 
@@ -208,11 +211,14 @@
       <div class="grid g4" style="margin-top:14px">
         <div><label>Concurrent requests</label><input id="conc" type="number" value="16" min="1"></div>
         <div><label>Overheads <span class="hint">% on top of capex</span></label><input id="ovh" type="number" value="25" min="0"></div>
+        <div><label>Cost of capital <span class="hint">% a year</span></label><input id="wacc" type="number" value="0" min="0" step="0.5"></div>
         <div><label>PUE <span class="hint">cooling factor</span></label><input id="pue" type="number" value="1.4" min="1" step="0.05"></div>
         <div><label>Idle draw <span class="hint">% of full</span></label><input id="idle" type="number" value="15" min="0" max="100"></div>
+        <div><label>Available <span class="hint">% of the year</span></label><input id="uptime" type="number" value="100" min="1" max="100" step="0.1"></div>
         <div><label>VRAM <span class="hint">GB per GPU</span></label><input id="vram" type="number" value="80" min="1"></div>
         <div><label>Bandwidth <span class="hint">GB/s</span></label><input id="bw" type="number" value="3350" min="1"></div>
         <div><label>Power <span class="hint">watts</span></label><input id="tdp" type="number" value="700" min="1"></div>
+        <div><label>Compute <span class="hint">TFLOP/s, BF16</span></label><input id="tflops" type="number" value="989" min="1"></div>
       </div>
       <p class="note">Overheads cover rack, network, support contract and admin time — not electricity, which PUE already accounts for. Idle draw matters: a GPU sitting idle still costs nearly what a busy one does, which is the whole reason the two cost figures below differ.</p>
     </details>
@@ -224,8 +230,11 @@
       <label style="display:flex;align-items:center;gap:7px;margin:0 0 6px">
         <input type="checkbox" id="useApi" style="width:auto;margin:0"> Compare against renting the same model from a cloud API
       </label>
-      <div id="apiJob" style="display:none"><label>Avg input length <span class="hint">tokens, for API pricing</span></label>
-        <input id="inTok" type="number" value="500" min="0" style="width:150px"></div>
+      <div class="apiCol" style="display:none"><label>Input served from cache <span class="hint">%</span></label>
+        <input id="cacheShare" type="number" value="0" min="0" max="100" style="width:130px"></div>
+      <div class="apiCol" style="display:none"><label>Cache read price <span class="hint">% of input price</span></label>
+        <input id="cachePrice" type="number" value="10" min="0" max="100" style="width:150px"></div>
+
     </div>
     <table id="cands">
       <thead><tr>
@@ -234,7 +243,8 @@
         <th class="num" style="width:10%">Active (B)</th>
         <th style="width:14%">Precision</th>
         <th class="num" style="width:15%">Your score (%)</th>
-        <th class="num" style="width:21%">Speed (tok/s)</th>
+        <th class="num" style="width:16%">Speed (tok/s)</th>
+        <th class="num" style="width:12%">KV MB/token</th>
         <th class="num apiCol" style="width:13%;display:none">API $/M in</th>
         <th class="num apiCol" style="width:13%;display:none">API $/M out</th>
         <th style="width:5%"></th>
@@ -243,6 +253,7 @@
     </table>
     <button class="btn" id="add" style="margin-top:14px">+ Add a model</button>
     <p class="note apiNote" style="display:none"><strong>API prices are yours to enter.</strong> Nothing is hardcoded here — published prices change monthly and any figure baked into this file would be wrong by the time you read it. Take the two numbers off the provider's pricing page for the model you would actually rent. The comparison covers tokens only: egress, rate-limit headroom and the fact that your data leaves the building are not priced.</p>
+    <p class="note"><strong>KV MB/token</strong> is the attention cache each sequence carries, and it is what makes high concurrency and long context expensive in VRAM: at your settings it is multiplied by concurrency and by input plus output length. Take it from the model card — 2 × layers × kv-heads × head-dim × bytes, in megabytes. Left empty it is not counted at all, and the GPU count below is a floor rather than an answer.</p>
     <p class="note"><strong>Total</strong> is every parameter the weights contain; <strong>active</strong> is how many are used per token. For a dense model they are the same number. For a mixture-of-experts they are not, and the difference decides everything: the VRAM bill — and so the GPU count — follows the total, while speed follows the active part. A model can therefore need eight GPUs to hold and still answer quickly.</p>
     <p class="note"><strong>Your score</strong> is the model's result on your graded examples — not a public benchmark. <strong>Speed</strong> auto-fills with a rough estimate from memory bandwidth; it is a shortlisting guess that can be wrong by half. Type a measured number over it as soon as you have one, and it will be marked as measured.</p>
   </div>
@@ -278,16 +289,18 @@
 </div></div>
 
 <script>
+// tf = dense BF16 TFLOP/s, the published figure without sparsity claims. It
+// only drives prefill, which is compute-bound where generation is not.
 const GPUS = [
-  {n:"NVIDIA H100 SXM 80GB", vram:80,  bw:3350, tdp:700},
-  {n:"NVIDIA H100 PCIe 80GB",vram:80,  bw:2000, tdp:350},
-  {n:"NVIDIA H200 SXM 141GB",vram:141, bw:4800, tdp:700},
-  {n:"NVIDIA A100 80GB",     vram:80,  bw:2000, tdp:400},
-  {n:"NVIDIA A100 40GB",     vram:40,  bw:1555, tdp:400},
-  {n:"NVIDIA L40S 48GB",     vram:48,  bw:864,  tdp:350},
-  {n:"NVIDIA RTX 6000 Ada",  vram:48,  bw:960,  tdp:300},
-  {n:"NVIDIA RTX 4090 24GB", vram:24,  bw:1008, tdp:450},
-  {n:"Custom / other",       vram:80,  bw:2000, tdp:500}
+  {n:"NVIDIA H100 SXM 80GB", vram:80,  bw:3350, tdp:700, tf:989},
+  {n:"NVIDIA H100 PCIe 80GB",vram:80,  bw:2000, tdp:350, tf:756},
+  {n:"NVIDIA H200 SXM 141GB",vram:141, bw:4800, tdp:700, tf:989},
+  {n:"NVIDIA A100 80GB",     vram:80,  bw:2000, tdp:400, tf:312},
+  {n:"NVIDIA A100 40GB",     vram:40,  bw:1555, tdp:400, tf:312},
+  {n:"NVIDIA L40S 48GB",     vram:48,  bw:864,  tdp:350, tf:362},
+  {n:"NVIDIA RTX 6000 Ada",  vram:48,  bw:960,  tdp:300, tf:91},
+  {n:"NVIDIA RTX 4090 24GB", vram:24,  bw:1008, tdp:450, tf:83},
+  {n:"Custom / other",       vram:80,  bw:2000, tdp:500, tf:300}
 ];
 const PREC = [
   {n:"FP16 / BF16", b:2},
@@ -298,6 +311,9 @@ const PREC = [
 // part of peak bandwidth, tensor parallelism scales sub-linearly, and batching
 // gains flatten out.
 const MEM_EFF = 0.70, TP_SCALE = 0.80, BATCH_HALF = 32;
+// Prefill is limited by arithmetic, not bandwidth: two flops per parameter per
+// token, at the fraction of peak a real kernel sustains.
+const PREFILL_MFU = 0.40;
 const HOURS = 8760, SEC_H = 3600;
 
 // A shortlist that spans the three shapes a team actually chooses between: a
@@ -322,7 +338,7 @@ function buildGpu(){
   $("gpu").innerHTML = GPUS.map((g,i)=>`<option value="${i}">${g.n}</option>`).join("");
   $("gpu").onchange = () => {
     const g = GPUS[+$("gpu").value];
-    $("vram").value = g.vram; $("bw").value = g.bw; $("tdp").value = g.tdp;
+    $("vram").value = g.vram; $("bw").value = g.bw; $("tdp").value = g.tdp; $("tflops").value = g.tf;
     render();
   };
 }
@@ -330,7 +346,7 @@ function buildGpu(){
 function drawRows(){
   const api = $("useApi").checked;
   document.querySelectorAll("th.apiCol").forEach(th => th.style.display = api ? "table-cell" : "none");
-  $("apiJob").style.display = api ? "block" : "none";
+  document.querySelectorAll("div.apiCol").forEach(d => d.style.display = api ? "block" : "none");
   document.querySelectorAll(".apiNote").forEach(n => n.style.display = api ? "block" : "none");
   $("crows").innerHTML = rows.map((r,i)=>`
     <tr>
@@ -340,6 +356,7 @@ function drawRows(){
       <td><select data-i="${i}" data-f="q">${PREC.map((p,j)=>`<option value="${j}" ${j===r.q?"selected":""}>${p.n}</option>`).join("")}</select></td>
       <td><input data-i="${i}" data-f="score" type="number" min="0" max="100" step="0.1" value="${r.score}"></td>
       <td><input data-i="${i}" data-f="tps" type="number" min="1" placeholder="estimate" value="${r.tps ?? ""}"></td>
+      <td><input data-i="${i}" data-f="kv" type="number" min="0" step="0.01" placeholder="not counted" value="${r.kv ?? ""}"></td>
       <td class="apiCol" style="display:${api?"table-cell":"none"}"><input data-i="${i}" data-f="ai" type="number" min="0" step="0.01" value="${r.ai ?? 0}"></td>
       <td class="apiCol" style="display:${api?"table-cell":"none"}"><input data-i="${i}" data-f="ao" type="number" min="0" step="0.01" value="${r.ao ?? 0}"></td>
       <td><button class="btn x" data-del="${i}" title="Remove">×</button></td>
@@ -349,6 +366,7 @@ function drawRows(){
       const r = rows[+el.dataset.i], f = el.dataset.f;
       if(f==="name") r.name = el.value;
       else if(f==="tps") r.tps = el.value==="" ? null : parseFloat(el.value);
+      else if(f==="kv")  r.kv  = el.value==="" ? null : parseFloat(el.value);
       else if(f==="act") r.act = parseFloat(el.value);
       else r[f] = parseFloat(el.value);
       render();
@@ -367,26 +385,44 @@ function compute(mult){
   const qBar     = num("qBar");
   const maxSec   = num("maxSec");
   const conc     = Math.max(1, num("conc"));
+  const inTok    = num("inTok");
+  const peakX    = Math.max(1, num("peakRatio"));
+  const tflops   = num("tflops");
   const vram     = num("vram"), bw = num("bw"), tdpW = num("tdp");
   const price    = num("gpuPrice"), life = Math.max(.1,num("life"));
   const kwh      = num("kwh"), pue = Math.max(1,num("pue"));
   const ovh      = num("ovh")/100, idle = Math.min(1,num("idle")/100);
+  const upt      = Math.min(1, Math.max(0.01, num("uptime")/100));
   const errCost  = Math.max(0, num("errCost"));
-  const api      = $("useApi").checked, inTok = num("inTok");
+  const api      = $("useApi").checked;
   const shared   = $("useShare").checked;
-  const otherTok = shared ? num("otherReq")*12*num("otherTok") : 0;   // tokens a year
+  const otherReq = shared ? num("otherReq")*12 : 0;
+  const otherOut = num("otherTok");
 
   // Cost of one GPU-hour, split into the part that does not vary with load and
   // the part that does. Keeping them apart is what makes the idle penalty visible.
-  const fixedPerGpuH = (price/(life*HOURS))*(1+ovh);
+  // Straight-line depreciation at 0%. Above that the capex is charged as an
+  // annuity, which is what the money actually costs a business that could have
+  // done something else with it - at 15% over three years, 31% more per hour.
+  const wacc     = Math.max(0, num("wacc"))/100;
+  const annualCapex = wacc > 0 ? price*wacc/(1-Math.pow(1+wacc,-life)) : price/life;
+  const fixedPerGpuH = (annualCapex/HOURS)*(1+ovh);
   const varPerGpuH   = load => (tdpW/1000)*(idle+load*(1-idle))*pue*kwh;
 
   return rows.map((r,i) => {
     const bytes    = PREC[r.q].b;
     const weights  = r.p*bytes;                 // GB held in memory
     const readPer  = (r.act ?? r.p)*bytes;      // GB read per token generated
-    const vramNeed = weights*1.2;               // + runtime overhead, excl. KV cache
-    const gpus     = Math.max(1, Math.ceil(vramNeed/vram));
+    // The KV cache is per sequence in flight, and it is the term that punishes
+    // high concurrency and long context. Read it off the model card:
+    // 2 x layers x kv-heads x head-dim x bytes, in MB.
+    const kvGb     = (r.kv ?? 0)*conc*(inTok+outTok)/1000;
+    const vramNeed = weights*1.2 + kvGb;       // weights, runtime overhead, KV
+    // Tensor parallelism splits attention heads, so real deployments use 1, 2,
+    // 4, 8 - never 3 or 5. Rounding up to the next power of two is what you
+    // would actually buy.
+    const rawGpus  = Math.max(1, Math.ceil(vramNeed/vram));
+    const gpus     = Math.pow(2, Math.ceil(Math.log2(rawGpus)));
     const effBw    = bw*gpus*(gpus>1?TP_SCALE:1)*MEM_EFF;
     // Decode speed is set by what has to be read per token, not by what is
     // held. For a dense model those are the same; for a mixture-of-experts the
@@ -395,23 +431,32 @@ function compute(mult){
     const estAgg   = single*conc/(1+conc/BATCH_HALF);
     const agg      = r.tps ?? estAgg*(mult ? mult[i] : 1);
     const measured = r.tps != null;
-    const perStream= agg/conc;
-    const respSec  = outTok/perStream;
+    // Reading the prompt is arithmetic, not memory traffic, so it has its own
+    // ceiling: two flops per parameter per token at the fraction of peak a real
+    // kernel sustains. Leaving it out made every box look bigger than it is.
+    const prefillAgg = tflops*1e12*PREFILL_MFU*gpus*(gpus>1?TP_SCALE:1)/(2*readPer/bytes*1e9);
+    const serviceSec = inTok/prefillAgg + outTok/agg;   // GPU-seconds of work per request
+    const rps        = 1/serviceSec;                    // one replica, flat out
+    const respSec    = serviceSec*conc;                 // at the stated batch depth
 
-    const rps      = agg/outTok;
-    // Sizing works in tokens, not requests, because anything else sharing the
-    // box has its own response length. With nothing else on it this reduces to
-    // exactly the request-based figure it replaced.
-    const ourTokens= volume*outTok;
-    const demand   = ourTokens + otherTok;
-    const capPerTok= agg*SEC_H*HOURS;
-    const replicas = Math.max(1, Math.ceil(demand/capPerTok));
-    const u        = demand/(capPerTok*replicas);
+    // Capacity is bought for the busiest hour, not the annual average. A
+    // workload with a 3x peak needs three times the hardware to answer at the
+    // peak, and pays for it all year.
+    const ourSec   = volume*serviceSec;                 // GPU-seconds a year
+    const otherSec = otherReq*(inTok/prefillAgg + otherOut/agg);
+    const demandSec= ourSec + otherSec;
+    // You pay for all 8,760 hours; you only get work out of the ones the box is
+    // actually up. Maintenance, driver upgrades and failures come out of these.
+    const avgLoad  = demandSec/(SEC_H*HOURS*upt);       // replicas' worth, averaged
+    const peakLoad = avgLoad*peakX;
+    const replicas = Math.max(1, Math.ceil(peakLoad));
+    const uPeak    = replicas ? peakLoad/replicas : 0;  // how full at the peak
+    const u        = replicas ? avgLoad/replicas : 0;   // how full on average
     const totalGpu = replicas*gpus;
 
     // The box costs what it costs; each workload carries the part of it that it
     // consumes, idle capacity included, which is what makes sharing pay.
-    const shareFrac= demand > 0 ? ourTokens/demand : 1;
+    const shareFrac= demandSec > 0 ? ourSec/demandSec : 1;
     const peak1k   = 1000*(fixedPerGpuH+varPerGpuH(1))*gpus/(rps*SEC_H);
     const boxAnnual= totalGpu*(fixedPerGpuH+varPerGpuH(u))*HOURS;
     const annual   = boxAnnual*shareFrac;
@@ -426,14 +471,20 @@ function compute(mult){
     const all1k    = 1000*total/volume;
 
     // Renting the same model: tokens only, at the prices the user typed.
-    const apiAnnual= api ? volume*(inTok*(r.ai||0) + outTok*(r.ao||0))/1e6 : 0;
+    // Providers charge a fraction of list for input they have already seen. A
+    // RAG workload with a shared prefix hits that on most of its input, and
+    // ignoring it overstates the rented price by a third or more.
+    const cShare   = Math.min(1, Math.max(0, num("cacheShare")/100));
+    const cMult    = Math.max(0, num("cachePrice")/100);
+    const inPrice  = (r.ai||0)*((1-cShare) + cShare*cMult);
+    const apiAnnual= api ? volume*(inTok*inPrice + outTok*(r.ao||0))/1e6 : 0;
     const api1k    = 1000*apiAnnual/volume;
     const apiTotal = apiAnnual + errAnnual;      // the same model gets the same answers wrong
 
     const okQual   = r.score >= qBar;
     const okLat    = respSec <= maxSec;
-    return {...r, weights, readPer, vramNeed, gpus, totalGpu, replicas, agg, measured, estAgg,
-            respSec, rps, u, peak1k, true1k, annual, errRate, errAnnual, total, all1k,
+    return {...r, weights, readPer, vramNeed, kvGb, gpus, totalGpu, replicas, agg, measured, estAgg,
+            respSec, rps, u, uPeak, serviceSec, prefillAgg, peak1k, true1k, annual, errRate, errAnnual, total, all1k,
             apiAnnual, api1k, apiTotal, boxAnnual, shareFrac, okQual, okLat,
             feasible: okQual && okLat, gap: true1k/peak1k};
   });
@@ -447,7 +498,8 @@ function compute(mult){
 // that looked plausible and was not.
 const REQUIRED = [["volMonth","requests per month"], ["outTok","average output length"],
                   ["vram","VRAM per GPU"], ["bw","memory bandwidth"],
-                  ["life","depreciation period"], ["conc","concurrent requests"]];
+                  ["life","depreciation period"], ["conc","concurrent requests"],
+                  ["tflops","GPU compute in TFLOP/s"]];
 
 function missingInputs(){
   const gaps = REQUIRED.filter(([id]) => !(num(id) > 0)).map(([,label]) => label);
@@ -559,6 +611,10 @@ function sensCard(win){
     <div class="chart">${bars}</div>
     <p class="note">Share of the ${s.n} scenarios each model wins when every estimated speed is varied by ±50% independently${s.exhaustive?"":", sampled at the extremes because there are too many combinations to run them all"}. Measured speeds are held fixed — they are not in doubt. Quality scores never move, so a model that misses your bar cannot win its way in here.</p>
     ${caveat}
+    ${(() => {
+      const close = rows.filter(r => Math.abs(r.score - num("qBar")) <= 1.5).map(r => esc(r.name));
+      return close.length ? `<p class="note">Speed is not the only estimate here. ${close.join(" and ")} ${close.length===1?"sits":"sit"} within 1.5 points of your ${num("qBar")}% bar, and on 100 graded examples the sampling error is wider than that — which side of the bar ${close.length===1?"it lands":"they land"} on is not yet decided by the evidence.</p>` : "";
+    })()}
   </div>`;
 }
 
@@ -718,12 +774,13 @@ function render(){
 
   const table = res.map(r=>`
     <tr>
-      <td>${esc(r.name)}<br><span style="font-size:11.5px;color:var(--muted)">${r.weights.toFixed(0)} GB weights${r.act && r.act !== r.p ? `, ${r.readPer.toFixed(0)} GB read/token` : ""} · ${r.gpus} GPU/replica</span></td>
+      <td>${esc(r.name)}<br><span style="font-size:11.5px;color:var(--muted)">${r.weights.toFixed(0)} GB weights${r.act && r.act !== r.p ? `, ${r.readPer.toFixed(0)} GB read/token` : ""}${r.kvGb ? `, ${r.kvGb.toFixed(0)} GB KV` : ""} · ${r.gpus} GPU/replica</span></td>
       <td class="num">${r.score}%<br>${r.okQual?'<span class="tag ok">✓ clears</span>':'<span class="tag no">✕ short</span>'}</td>
       <td class="num">${r.respSec.toFixed(1)}s<br>${r.okLat?'<span class="tag ok">✓ in time</span>':'<span class="tag no">✕ slow</span>'}</td>
       <td class="num">${big(r.agg)}<br><span class="tag ${r.measured?"meas":"est"}">${r.measured?"measured":"estimate"}</span></td>
       <td class="num">${r.totalGpu}</td>
       <td class="num">${(r.u*100).toFixed(0)}%</td>
+      <td class="num">${(r.uPeak*100).toFixed(0)}%</td>
       <td class="num">$${money(r.peak1k)}</td>
       <td class="num"><strong>$${money(priced ? r.all1k : r.true1k)}</strong></td>
       <td class="num">$${big(r.annual)}</td>
@@ -743,7 +800,7 @@ function render(){
     <div class="card">
       <h2>The numbers</h2>
       <div style="overflow-x:auto">
-      <table class="${priced && api ? "wide" : ""}">
+      <table class="${priced || api ? "wide" : ""}">
         <thead><tr>
           <th>Model</th><th class="num">Quality</th><th class="num">Response</th>
           <th class="num">Speed tok/s</th><th class="num">GPUs</th><th class="num">Used</th>
@@ -755,6 +812,7 @@ function render(){
         <tbody>${table}</tbody>
       </table></div>
       <p class="note"><strong>Flat out $/1k</strong> assumes the GPU never idles — the figure every online calculator quotes. <strong>${priced?"All-in $/1k":"Real $/1k"}</strong> is what you will actually pay at your volume${priced?", errors included":""}. The gap between them is idle capacity, and on-premise it is usually the largest line in the whole comparison.${priced?" Errors/yr prices every wrong answer at what you said one costs; it is the only column that pays a better model back for being better.":""}</p>
+      ${win && win.uPeak > 0.8 ? `<div class="warnbox"><strong>At the busiest hour this runs at ${(win.uPeak*100).toFixed(0)}% of capacity.</strong> The response times above are service times — the work itself — and exclude waiting for a free slot. Waiting grows with 1/(1&minus;load): at ${(win.uPeak*100).toFixed(0)}% full that is roughly ${(1/(1-Math.min(0.99,win.uPeak))).toFixed(0)}× the service time in a simple queue. Continuous batching is kinder than that, but the direction is not in doubt, and nobody holds an interactive ${maxSec}s promise at this load. Raise the busiest-hour figure, or buy the headroom deliberately.</div>` : ""}
       ${anyEst?`<div class="warnbox"><strong>Some speeds are estimates.</strong> They come from memory bandwidth and can be out by half in either direction, which moves cost by the same factor. Run one model on your own hardware for an afternoon, type the real number in, and the ranking here becomes something you can defend in a board meeting.</div>`:""}
     </div>` + sensCard(win);
 
@@ -789,7 +847,8 @@ $("theme").onclick = () => {
     (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
   document.documentElement.dataset.theme = showing==="dark" ? "light" : "dark";
 };
-["volMonth","outTok","qBar","maxSec","errCost","inTok","gpuPrice","life","kwh","conc","ovh","pue","idle","vram","bw","tdp"]
+["volMonth","outTok","qBar","maxSec","errCost","inTok","peakRatio","gpuPrice","life","kwh","conc",
+ "ovh","wacc","pue","idle","uptime","vram","bw","tdp","tflops","cacheShare","cachePrice"]
   .forEach(id => $(id).oninput = render);
 $("useApi").onchange = () => { drawRows(); render(); };
 $("useShare").onchange = () => { $("shareJob").style.display = $("useShare").checked ? "grid" : "none"; render(); };
@@ -801,19 +860,24 @@ $("useShare").onchange = () => { $("shareJob").style.display = $("useShare").che
 // link travels, the numbers travel with it.
 const FIELDS = ["volMonth","outTok","qBar","maxSec","gpu","gpuPrice","life","kwh",
                 "conc","ovh","pue","idle","vram","bw","tdp","errCost","inTok",
-                "otherReq","otherTok"];
+                "otherReq","otherTok","peakRatio","wacc","uptime","tflops",
+                "cacheShare","cachePrice"];
 // Older links are still good links. v1 predates the cost of a wrong answer and
 // v2 the cloud comparison; both are read as those features switched off, which
 // is what they meant when they were written.
-const OLD_LEN = {1: FIELDS.length-4, 2: FIELDS.length-3, 3: FIELDS.length-2};
+// Six fields arrived with the modelling fixes; links written before them are
+// read as those fixes switched off, which is exactly what they meant.
+const V6_ADDED = ["1","0","100","989","0","10"];
+const OLD_LEN = {1: FIELDS.length-10, 2: FIELDS.length-9, 3: FIELDS.length-8,
+                 4: FIELDS.length-6, 5: FIELDS.length-6};
 // encodeURIComponent leaves ~ alone, and ~ is our field separator inside a model.
 const encName = s => encodeURIComponent(s).replace(/~/g,"%7E");
 
 function encodeState(){
   const f = FIELDS.map(id => $(id).value).join(",");
   const m = rows.map(r => [encName(r.name), r.p, r.q, r.score, r.tps ?? "", r.ai||0, r.ao||0,
-                           r.act ?? r.p].join("~")).join("|");
-  return "v=5&a=" + ($("useApi").checked?1:0) + ($("useShare").checked?1:0) + "&f=" + f + "&m=" + m;
+                           r.act ?? r.p, r.kv ?? ""].join("~")).join("|");
+  return "v=6&a=" + ($("useApi").checked?1:0) + ($("useShare").checked?1:0) + "&f=" + f + "&m=" + m;
 }
 
 function shareUrl(){
@@ -829,12 +893,13 @@ function applyState(hash){
     if(i>0) parts[kv.slice(0,i)] = kv.slice(i+1);
   });
   const v = parts.v;
-  if(!/^[12345]$/.test(v || "") || !parts.f) return false;
+  if(!/^[123456]$/.test(v || "") || !parts.f) return false;
 
   const vals = parts.f.split(",");
   if(vals.length === OLD_LEN[1] && v === "1") vals.push("0");            // errCost
   if(vals.length === OLD_LEN[2] && v <= "2")  vals.push("500");          // inTok
   if(vals.length === OLD_LEN[3] && v <= "3")  vals.push("3000000","250");// other workload
+  if(vals.length === OLD_LEN[4] && v <= "5")  vals.push(...V6_ADDED);    // modelling fixes
   if(vals.length !== FIELDS.length) return false;
   if(vals.some(v => v==="" || !isFinite(parseFloat(v)))) return false;
 
@@ -844,7 +909,8 @@ function applyState(hash){
       const c = s.split("~");
       if(c.length === 5) c.push("0","0");            // pre-v3 rows carry no prices
       if(c.length === 7) c.push(c[1]);               // pre-v5 rows are all dense
-      if(c.length !== 8) return null;
+      if(c.length === 8) c.push("");                 // pre-v6 rows have no KV figure
+      if(c.length !== 9) return null;
       const p = parseFloat(c[1]), q = parseInt(c[2],10), score = parseFloat(c[3]);
       if(!isFinite(p) || !isFinite(score) || !(q>=0 && q<PREC.length)) return null;
       const tps = c[4]==="" ? null : parseFloat(c[4]);
@@ -853,7 +919,9 @@ function applyState(hash){
       if(!isFinite(ai) || !isFinite(ao) || !isFinite(act)) return null;
       let name;
       try { name = decodeURIComponent(c[0]); } catch(e) { return null; }
-      return {name, p, act, q, score, tps, ai, ao};
+      const kv = c[8]==="" ? null : parseFloat(c[8]);
+      if(kv !== null && !isFinite(kv)) return null;
+      return {name, p, act, q, score, tps, ai, ao, kv};
     });
     if(models.some(m=>!m) || !models.length) return false;
   }
