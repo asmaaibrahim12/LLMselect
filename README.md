@@ -20,24 +20,28 @@ a colleague who opens it.
 
 **The real cost, not the flat-out cost.** Every online calculator quotes the
 price of a GPU running at 100%. Yours will not. At 1,000,000 requests a month on
-one H100, the shipped example runs at 11% utilisation — so the true cost is
-$1.06 per thousand requests against a flat-out figure of $0.120. That 8.8× gap
+one H100, the shipped example runs at 12% utilisation — so the true cost is
+$1.06 per thousand requests against a flat-out figure of $0.135. That 7.9× gap
 is the largest line in most on-premise comparisons and it is the one nobody
 quotes. Both numbers always appear together.
 
 **What sparsity does to the bill.** VRAM follows a model's total parameters;
 speed follows how many are active per token. Enter both and a mixture-of-experts
 stops looking absurd: the shipped example needs eight GPUs to hold Kimi K2.6's
-500 GB of weights, yet it reads only 16 GB per token — so at 200M requests a
-month it is *cheaper per request* than a dense 14B model, and the recommendation
-changes to it. Collapse the two numbers into one, as most calculators do, and
-you would price it thirty times too slow.
+500 GB of weights, yet it reads only 16 GB per token. At a million requests a
+month that is still an eight-GPU box at 1% utilisation and plainly the wrong
+buy; at 200 million it draws level with a dense 14B model — $323.8k against
+$324.7k a year, the same 24 GPUs — and wins the recommendation on quality
+rather than on price. Sparsity closes the gap; it does not walk away with it,
+because reading the prompt is compute-bound and the sparse model gets no
+discount there. Collapse total and active into one number, as most calculators
+do, and you would price this model thirty times too slow.
 
 **What the peak costs you.** Hardware is bought for the busiest hour and paid
 for all year. Tell it how much busier your peak is than your average and the
 GPU count follows the peak: at 200M requests a month, a normal 3× office-hours
-peak takes the shipped example from 22 GPUs to 72, and the bill from $297k to
-$932k. Every calculator that sizes on the annual average is wrong by that
+peak takes the shipped example from 24 GPUs to 72, and the bill from $324.7k to
+$932.1k. Every calculator that sizes on the annual average is wrong by that
 factor. The tool also says how full the busiest hour runs, and warns when a
 response-time promise stops being credible at that load.
 
@@ -53,7 +57,7 @@ first. On the shipped defaults it is *not* stable — which is the honest answer
 
 **What the mistakes cost.** Give it the price of one bad answer — a re-do, a
 refund, a complaint — and it ranks on hardware plus errors at each model's own
-accuracy. On the defaults, twenty cents a mistake is enough to flip the
+accuracy. On the defaults, nineteen cents a mistake is enough to flip the
 recommendation from Qwen2.5 14B to the far larger Kimi K2.6, which gets 3.8
 fewer answers wrong in every hundred. This is usually the argument that wins the
 budget conversation.
@@ -68,7 +72,7 @@ corrections that used to push the answer toward owning.
 
 **What sharing the box saves.** Put other workloads on the same hardware and the
 cost splits by consumed capacity. On the defaults, adding 3M requests a month of
-other work takes this workload from $1.06 to $0.271 per thousand. At low
+other work takes this workload from $1.06 to $0.272 per thousand. At low
 utilisation this is the biggest saving available anywhere in the tool.
 
 ## Things it will not do
@@ -99,7 +103,7 @@ up in board decks.
 
 | | |
 |---|---|
-| `model-picker.html` | the tool — the whole thing, 54 KB |
+| `model-picker.html` | the tool — the whole thing, 67 KB |
 | `BRIEF.md` | the rules it must not break, and how to verify a change |
 
 `BRIEF.md` is the file to read before changing anything. It carries the

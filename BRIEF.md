@@ -65,6 +65,8 @@ With the shipped defaults — 1,000,000 requests/month, 500 input and 250 output
 | Kimi Linear 48B A3B | ruled out — misses quality by 3.0 points |
 | Kimi K2.6 | 8 GPUs, ~$101.3k/year — 500 GB held, 16 GB read per token |
 | Sensitivity | not stable — Qwen2.5 14B and Kimi K2.6 split the eight combinations |
+| Sharing on, 3,000,000 other requests/month | real cost ~$0.272 per 1k, you carry about a quarter of the box |
+| At 200,000,000 on flat traffic | Qwen2.5 14B and Kimi K2.6 land within 0.3% of each other — $324.7k against $323.8k, 24 GPUs each — and the tie-break on quality decides it |
 
 Then exercise each correction in turn and confirm it bites:
 
@@ -73,7 +75,7 @@ Then exercise each correction in turn and confirm it bites:
 | **Busiest hour → 3×** | Qwen's peak load goes 12% → 36%; nothing else moves at this volume |
 | **Cost of capital → 15%** | Qwen $12.8k → **$16.7k** a year, $1.06 → $1.39 per 1k |
 | **KV MB/token → 0.197 on Qwen, concurrency → 128** | 19 GB of KV appears beside the weights, and Qwen fails the latency bar at 19.5s |
-| **Requests → 200,000,000 with a 3× peak** | Qwen needs **72 GPUs** and ~$932k a year, against 22 GPUs and $297k when peaks were ignored — the correction is a factor of three |
+| **Requests → 200,000,000 with a 3× peak** | Qwen needs **72 GPUs** and ~$932.1k a year, against 24 GPUs and ~$324.7k on flat traffic — the correction is a factor of three |
 | **Same, then read the warning** | "At the busiest hour this runs at 95% of capacity" — the queueing caveat |
 | **Cached input → 60% at 10% of list** | the rented figure drops by roughly a third |
 
