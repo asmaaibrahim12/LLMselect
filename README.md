@@ -112,7 +112,7 @@ up in board decks.
 
 | | |
 |---|---|
-| `model-picker.html` | the tool — the whole thing, 67 KB |
+| `model-picker.html` | the tool — the whole thing, 70 KB |
 | `BRIEF.md` | the rules it must not break, and how to verify a change |
 
 `BRIEF.md` is the file to read before changing anything. It carries the
