@@ -1,0 +1,12 @@
+# Editor and OS cruft
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+
+# The tool has no build output and no dependencies. If node_modules ever
+# appears here, something has gone wrong with the one-file rule.
+node_modules/
+package-lock.json
