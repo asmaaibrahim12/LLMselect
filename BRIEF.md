@@ -19,8 +19,9 @@ It is deliberately one file with no build step, no dependencies, and no network 
 5. **No invented quality scores.** Quality comes from the user's own test set. The tool must never ship a default or fetch a benchmark.
 6. **Feasibility before cost.** A model that misses the quality or latency bar is ruled out, not ranked cheaply. Pricing errors does not change that — it re-ranks the models that qualify, it does not readmit one that failed.
 7. **Both themes come from the tokens.** Light on bare `:root`, dark under both `prefers-color-scheme` and an explicit `data-theme`, print overriding both. No colour is defined only inside a theme block — that is how a page ends up with one theme's text on the other theme's background.
-8. **No figure from a missing number.** An empty or zero input that would divide by zero stops the output and names the field. A cost worked out from a gap looks like an answer without being one.
-9. **The URL is the save file.** Scenarios travel as links, so a model name can arrive from someone else. Anything the user typed is escaped before it reaches the page.
+8. **Total and active are different numbers.** VRAM, and so the GPU count, follows the total parameter count; decode speed follows what is read per token. Collapsing the two makes a mixture-of-experts look thirty times slower than it is.
+9. **No figure from a missing number.** An empty or zero input that would divide by zero stops the output and names the field. A cost worked out from a gap looks like an answer without being one.
+10. **The URL is the save file.** Scenarios travel as links, so a model name can arrive from someone else. Anything the user typed is escaped before it reaches the page.
 
 ## Known limits of the model
 
@@ -56,17 +57,17 @@ With the shipped defaults — 1,000,000 requests/month, 250 output tokens, 92% q
 | Flat-out cost per 1k | ~$0.120 |
 | Idle penalty | ~8.8× |
 | Utilisation | ~11% |
-| Llama 3.1 8B | ruled out — misses quality by 3.5 points |
-| Llama 3.3 70B | 2 GPUs, ~$25.6k/year |
+| Kimi Linear 48B A3B | ruled out — misses quality by 3.0 points |
+| Kimi K2.6 | 8 GPUs, ~$101.3k/year — 500 GB of weights, but only 16 GB read per token |
 | Cost of a wrong answer | 0 by default — every figure above is the hardware-only comparison |
-| Sharing on, 3,000,000 other requests/month | real cost ~$0.271 per 1k, 43% used, you carry 25% of the box |
 | Cloud comparison | off by default — the table gains a rented column only when it is switched on |
+| Sharing on, 3,000,000 other requests/month | real cost ~$0.271 per 1k, 43% used, you carry 25% of the box |
 | Print (Ctrl-P) | one A4 page, no input forms, assumptions summarised at the top |
-| Sensitivity | not stable — Qwen2.5 14B holds 50% of 8 scenarios, Llama 3.3 70B 25%, nothing qualifies 25% |
+| Sensitivity | not stable — Qwen2.5 14B and Kimi K2.6 win four of the eight combinations each |
 
-Then set **cost of a wrong answer to $0.05** and confirm the recommendation flips to Llama 3.3 70B: it costs $12.9k a year more in hardware but saves $15.0k a year in re-dos, so it wins by ~$2.1k. That flip is the point of the field.
+Then set **cost of a wrong answer to $0.20** and confirm the recommendation flips to Kimi K2.6: it costs $88.6k a year more in hardware but gets 3.8 fewer answers wrong in every hundred, which at that price is worth more. Below about $0.19 it does not flip. That crossover is the point of the field.
 
-Then change **requests per month to 200,000,000** and confirm the picture inverts: utilisation goes above 90%, the idle penalty drops to ~1.0×, and GPU counts separate sharply (roughly 13 / 22 / 68). If that inversion stops happening, the cost model is broken — that behaviour *is* the product.
+Then change **requests per month to 200,000,000** and confirm the picture inverts: utilisation goes above 75% for every candidate, the idle penalty drops to ~1.0×, and **the recommendation itself changes to Kimi K2.6** at ~$0.090 per 1k against Qwen's ~$0.124. That inversion is the product. A trillion-parameter model beating a 14B one on cost per request is not a bug: it reads 16 GB per token against the dense model's 28 GB, and at high utilisation the token cost is what you are paying. GPU counts separate to roughly 3 / 22 / 16.
 
 If Claude Code has browser tools, ask it to screenshot the page after every visual change and actually look at it. The math can be right while the layout is broken.
 

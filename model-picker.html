@@ -229,9 +229,10 @@
     </div>
     <table id="cands">
       <thead><tr>
-        <th style="width:26%">Model</th>
-        <th class="num" style="width:11%">Params (B)</th>
-        <th style="width:15%">Precision</th>
+        <th style="width:23%">Model</th>
+        <th class="num" style="width:10%">Total (B)</th>
+        <th class="num" style="width:10%">Active (B)</th>
+        <th style="width:14%">Precision</th>
         <th class="num" style="width:15%">Your score (%)</th>
         <th class="num" style="width:21%">Speed (tok/s)</th>
         <th class="num apiCol" style="width:13%;display:none">API $/M in</th>
@@ -242,6 +243,7 @@
     </table>
     <button class="btn" id="add" style="margin-top:14px">+ Add a model</button>
     <p class="note apiNote" style="display:none"><strong>API prices are yours to enter.</strong> Nothing is hardcoded here — published prices change monthly and any figure baked into this file would be wrong by the time you read it. Take the two numbers off the provider's pricing page for the model you would actually rent. The comparison covers tokens only: egress, rate-limit headroom and the fact that your data leaves the building are not priced.</p>
+    <p class="note"><strong>Total</strong> is every parameter the weights contain; <strong>active</strong> is how many are used per token. For a dense model they are the same number. For a mixture-of-experts they are not, and the difference decides everything: the VRAM bill — and so the GPU count — follows the total, while speed follows the active part. A model can therefore need eight GPUs to hold and still answer quickly.</p>
     <p class="note"><strong>Your score</strong> is the model's result on your graded examples — not a public benchmark. <strong>Speed</strong> auto-fills with a rough estimate from memory bandwidth; it is a shortlisting guess that can be wrong by half. Type a measured number over it as soon as you have one, and it will be marked as measured.</p>
   </div>
 
@@ -298,10 +300,14 @@ const PREC = [
 const MEM_EFF = 0.70, TP_SCALE = 0.80, BATCH_HALF = 32;
 const HOURS = 8760, SEC_H = 3600;
 
+// A shortlist that spans the three shapes a team actually chooses between: a
+// sparse model small enough to be cheap, a dense mid-size one, and a very large
+// sparse one. The scores are placeholders for the reader's own graded results -
+// they are the one number this tool will never supply.
 let rows = [
-  {name:"Llama 3.1 8B",   p:8,   q:0, score:88.5, tps:null, ai:0, ao:0},
-  {name:"Qwen2.5 14B",    p:14,  q:0, score:92.6, tps:null, ai:0, ao:0},
-  {name:"Llama 3.3 70B",  p:70,  q:1, score:95.1, tps:null, ai:0, ao:0}
+  {name:"Kimi Linear 48B A3B", p:48,   act:3,  q:1, score:89.0, tps:null, ai:0, ao:0},
+  {name:"Qwen2.5 14B",         p:14,   act:14, q:0, score:92.6, tps:null, ai:0, ao:0},
+  {name:"Kimi K2.6",           p:1000, act:32, q:2, score:96.4, tps:null, ai:0, ao:0}
 ];
 
 const $ = id => document.getElementById(id);
@@ -330,6 +336,7 @@ function drawRows(){
     <tr>
       <td><input data-i="${i}" data-f="name" value="${esc(r.name)}"></td>
       <td><input data-i="${i}" data-f="p" type="number" min="0.1" step="0.1" value="${r.p}"></td>
+      <td><input data-i="${i}" data-f="act" type="number" min="0.1" step="0.1" value="${r.act ?? r.p}"></td>
       <td><select data-i="${i}" data-f="q">${PREC.map((p,j)=>`<option value="${j}" ${j===r.q?"selected":""}>${p.n}</option>`).join("")}</select></td>
       <td><input data-i="${i}" data-f="score" type="number" min="0" max="100" step="0.1" value="${r.score}"></td>
       <td><input data-i="${i}" data-f="tps" type="number" min="1" placeholder="estimate" value="${r.tps ?? ""}"></td>
@@ -342,6 +349,7 @@ function drawRows(){
       const r = rows[+el.dataset.i], f = el.dataset.f;
       if(f==="name") r.name = el.value;
       else if(f==="tps") r.tps = el.value==="" ? null : parseFloat(el.value);
+      else if(f==="act") r.act = parseFloat(el.value);
       else r[f] = parseFloat(el.value);
       render();
     };
@@ -375,11 +383,15 @@ function compute(mult){
 
   return rows.map((r,i) => {
     const bytes    = PREC[r.q].b;
-    const weights  = r.p*bytes;                 // GB
+    const weights  = r.p*bytes;                 // GB held in memory
+    const readPer  = (r.act ?? r.p)*bytes;      // GB read per token generated
     const vramNeed = weights*1.2;               // + runtime overhead, excl. KV cache
     const gpus     = Math.max(1, Math.ceil(vramNeed/vram));
     const effBw    = bw*gpus*(gpus>1?TP_SCALE:1)*MEM_EFF;
-    const single   = effBw/weights;             // tok/s for one sequence
+    // Decode speed is set by what has to be read per token, not by what is
+    // held. For a dense model those are the same; for a mixture-of-experts the
+    // read is a fraction of the total, which is the whole point of the design.
+    const single   = effBw/readPer;             // tok/s for one sequence
     const estAgg   = single*conc/(1+conc/BATCH_HALF);
     const agg      = r.tps ?? estAgg*(mult ? mult[i] : 1);
     const measured = r.tps != null;
@@ -420,7 +432,7 @@ function compute(mult){
 
     const okQual   = r.score >= qBar;
     const okLat    = respSec <= maxSec;
-    return {...r, weights, vramNeed, gpus, totalGpu, replicas, agg, measured, estAgg,
+    return {...r, weights, readPer, vramNeed, gpus, totalGpu, replicas, agg, measured, estAgg,
             respSec, rps, u, peak1k, true1k, annual, errRate, errAnnual, total, all1k,
             apiAnnual, api1k, apiTotal, boxAnnual, shareFrac, okQual, okLat,
             feasible: okQual && okLat, gap: true1k/peak1k};
@@ -439,7 +451,8 @@ const REQUIRED = [["volMonth","requests per month"], ["outTok","average output l
 
 function missingInputs(){
   const gaps = REQUIRED.filter(([id]) => !(num(id) > 0)).map(([,label]) => label);
-  if(rows.some(r => !(r.p > 0))) gaps.push("model size in billions of parameters");
+  if(rows.some(r => !(r.p > 0))) gaps.push("total model size in billions of parameters");
+  if(rows.some(r => !((r.act ?? r.p) > 0))) gaps.push("active parameters per token");
   return gaps;
 }
 
@@ -705,7 +718,7 @@ function render(){
 
   const table = res.map(r=>`
     <tr>
-      <td>${esc(r.name)}<br><span style="font-size:11.5px;color:var(--muted)">${r.weights.toFixed(0)} GB weights · ${r.gpus} GPU/replica</span></td>
+      <td>${esc(r.name)}<br><span style="font-size:11.5px;color:var(--muted)">${r.weights.toFixed(0)} GB weights${r.act && r.act !== r.p ? `, ${r.readPer.toFixed(0)} GB read/token` : ""} · ${r.gpus} GPU/replica</span></td>
       <td class="num">${r.score}%<br>${r.okQual?'<span class="tag ok">✓ clears</span>':'<span class="tag no">✕ short</span>'}</td>
       <td class="num">${r.respSec.toFixed(1)}s<br>${r.okLat?'<span class="tag ok">✓ in time</span>':'<span class="tag no">✕ slow</span>'}</td>
       <td class="num">${big(r.agg)}<br><span class="tag ${r.measured?"meas":"est"}">${r.measured?"measured":"estimate"}</span></td>
@@ -770,7 +783,7 @@ function render(){
   });
 }
 
-$("add").onclick = () => { rows.push({name:"New model",p:8,q:2,score:90,tps:null,ai:0,ao:0}); drawRows(); render(); };
+$("add").onclick = () => { rows.push({name:"New model",p:8,act:8,q:2,score:90,tps:null,ai:0,ao:0}); drawRows(); render(); };
 $("theme").onclick = () => {
   const showing = document.documentElement.dataset.theme ||
     (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
@@ -798,8 +811,9 @@ const encName = s => encodeURIComponent(s).replace(/~/g,"%7E");
 
 function encodeState(){
   const f = FIELDS.map(id => $(id).value).join(",");
-  const m = rows.map(r => [encName(r.name), r.p, r.q, r.score, r.tps ?? "", r.ai||0, r.ao||0].join("~")).join("|");
-  return "v=4&a=" + ($("useApi").checked?1:0) + ($("useShare").checked?1:0) + "&f=" + f + "&m=" + m;
+  const m = rows.map(r => [encName(r.name), r.p, r.q, r.score, r.tps ?? "", r.ai||0, r.ao||0,
+                           r.act ?? r.p].join("~")).join("|");
+  return "v=5&a=" + ($("useApi").checked?1:0) + ($("useShare").checked?1:0) + "&f=" + f + "&m=" + m;
 }
 
 function shareUrl(){
@@ -815,7 +829,7 @@ function applyState(hash){
     if(i>0) parts[kv.slice(0,i)] = kv.slice(i+1);
   });
   const v = parts.v;
-  if(!/^[1234]$/.test(v || "") || !parts.f) return false;
+  if(!/^[12345]$/.test(v || "") || !parts.f) return false;
 
   const vals = parts.f.split(",");
   if(vals.length === OLD_LEN[1] && v === "1") vals.push("0");            // errCost
@@ -829,16 +843,17 @@ function applyState(hash){
     models = parts.m.split("|").map(s=>{
       const c = s.split("~");
       if(c.length === 5) c.push("0","0");            // pre-v3 rows carry no prices
-      if(c.length !== 7) return null;
+      if(c.length === 7) c.push(c[1]);               // pre-v5 rows are all dense
+      if(c.length !== 8) return null;
       const p = parseFloat(c[1]), q = parseInt(c[2],10), score = parseFloat(c[3]);
       if(!isFinite(p) || !isFinite(score) || !(q>=0 && q<PREC.length)) return null;
       const tps = c[4]==="" ? null : parseFloat(c[4]);
       if(tps !== null && !isFinite(tps)) return null;
-      const ai = parseFloat(c[5]), ao = parseFloat(c[6]);
-      if(!isFinite(ai) || !isFinite(ao)) return null;
+      const ai = parseFloat(c[5]), ao = parseFloat(c[6]), act = parseFloat(c[7]);
+      if(!isFinite(ai) || !isFinite(ao) || !isFinite(act)) return null;
       let name;
       try { name = decodeURIComponent(c[0]); } catch(e) { return null; }
-      return {name, p, q, score, tps, ai, ao};
+      return {name, p, act, q, score, tps, ai, ao};
     });
     if(models.some(m=>!m) || !models.length) return false;
   }

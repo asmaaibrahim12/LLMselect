@@ -25,6 +25,14 @@ $1.06 per thousand requests against a flat-out figure of $0.120. That 8.8× gap
 is the largest line in most on-premise comparisons and it is the one nobody
 quotes. Both numbers always appear together.
 
+**What sparsity does to the bill.** VRAM follows a model's total parameters;
+speed follows how many are active per token. Enter both and a mixture-of-experts
+stops looking absurd: the shipped example needs eight GPUs to hold Kimi K2.6's
+500 GB of weights, yet it reads only 16 GB per token — so at 200M requests a
+month it is *cheaper per request* than a dense 14B model, and the recommendation
+changes to it. Collapse the two numbers into one, as most calculators do, and
+you would price it thirty times too slow.
+
 **Whether cost is even your deciding factor.** Below about 25% utilisation you
 are paying for the box, not the tokens, and most models on the list cost the
 same. The tool says so plainly and tells you to decide on quality instead.
@@ -37,9 +45,10 @@ first. On the shipped defaults it is *not* stable — which is the honest answer
 
 **What the mistakes cost.** Give it the price of one bad answer — a re-do, a
 refund, a complaint — and it ranks on hardware plus errors at each model's own
-accuracy. On the defaults, five cents a mistake is enough to flip the
-recommendation to the larger, more accurate model. This is usually the argument
-that wins the budget conversation.
+accuracy. On the defaults, twenty cents a mistake is enough to flip the
+recommendation from Qwen2.5 14B to the far larger Kimi K2.6, which gets 3.8
+fewer answers wrong in every hundred. This is usually the argument that wins the
+budget conversation.
 
 **Buy versus build.** Enter the per-million-token prices for renting the same
 model and the two sit in one table. No provider prices are baked in; they change
