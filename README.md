@@ -83,10 +83,12 @@ prefill work of reading the prompt, and the rented figure accounts for cached
 input at whatever share and discount your provider gives you — the two
 corrections that used to push the answer toward owning.
 
-**Fine-tuning against serving, priced separately.** Every other figure here is
-what it costs to *serve* a model. Fine-tuning is what it costs to *get one
-ready*, and the two behave differently: serving recurs whether or not anyone
-touches the model, tuning recurs only because models and data drift. Switch it on
+**Fine-tuning and inference, told apart.** Sections 1 to 4 are inference —
+running the model in production, charged on every request for as long as the
+service exists. Section 5 is fine-tuning — getting a model ready, charged once
+and spread over the months until you redo it. Both tables carry a band above the
+headers saying which phase each column belongs to, so it is never something you
+have to work out. Switch it on
 and each candidate carries a one-off cost spread over the months until you would
 redo it — so the real question gets a real answer. On the shipped example, tuning
 a small model for $60,000 loses at a million requests a month, where it would

@@ -169,6 +169,11 @@
      rather than dragging the whole page sideways on a phone */
   .tscroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
   .tscroll table{min-width:640px}
+  /* Which phase a column belongs to should not be something a reader infers. */
+  tr.grp th{font-size:10px;letter-spacing:.08em;color:var(--ink-2);font-weight:700;
+    padding-bottom:3px;border-bottom:1px solid var(--grid)}
+  tr.grp th:empty{border-bottom:none}
+  #out tr.grp th{padding-top:0}
   .printonly{display:none}
 
   /* These numbers end up in board decks. One page, no forms, no controls -
@@ -244,7 +249,7 @@
     </div>
   </div>
 
-  <p class="note inputs" style="margin:0 0 18px">Fill these in and the answer builds underneath. It ranks the models that clear your quality and latency bars, and prices each at <em>your</em> volume — including the capacity you pay for and do not use. The scores are yours to supply: no benchmark ships with this.</p>
+  <p class="note inputs" style="margin:0 0 18px"><strong>Sections 1 to 4 are inference</strong> — what it costs to run the model in production, every day, for as long as the service exists. <strong>Section 5 is fine-tuning</strong> — the one-off of getting a model ready, which is the only cost here that does not recur with traffic. Fill these in and the answer builds underneath. It ranks the models that clear your quality and latency bars, and prices each at <em>your</em> volume — including the capacity you pay for and do not use. The scores are yours to supply: no benchmark ships with this.</p>
 
   <div class="card inputs">
     <h2>1 · The job</h2>
@@ -302,11 +307,7 @@
       <label style="display:flex;align-items:center;gap:7px;margin:0 0 6px">
         <input type="checkbox" id="useKv" style="width:auto;margin:0"> Count the KV cache in VRAM
       </label>
-      <label style="display:flex;align-items:center;gap:7px;margin:0 0 6px">
-        <input type="checkbox" id="usePrep" style="width:auto;margin:0"> Price the fine-tuning, not just the serving
-      </label>
-      <div class="prepCol" style="display:none"><label for="reprep">Redo the tuning every <span class="hint">months</span></label>
-        <input id="reprep" type="number" value="12" min="1" style="width:150px"></div>
+
       <div class="apiCol" style="display:none"><label for="cacheShare">Input served from cache <span class="hint">%</span></label>
         <input id="cacheShare" type="number" value="0" min="0" max="100" style="width:130px"></div>
       <div class="apiCol" style="display:none"><label for="cachePrice">Cache read price <span class="hint">% of input price</span></label>
@@ -315,7 +316,16 @@
     </div>
     <div class="tscroll">
     <table id="cands">
-      <thead><tr>
+      <thead>
+      <tr class="grp">
+        <th colspan="4" id="gModel">The model</th>
+        <th id="gQual">Quality</th>
+        <th id="gInf">Inference</th>
+        <th id="gTune" style="display:none">Fine-tuning</th>
+        <th id="gRent" colspan="2" style="display:none">Renting</th>
+        <th></th>
+      </tr>
+      <tr>
         <th style="width:23%">Model</th>
         <th class="num" style="width:10%">Total (B)</th>
         <th class="num" style="width:10%">Active (B)</th>
@@ -351,7 +361,18 @@
     </div>
   </div>
 
-  <div id="assume" class="printonly"></div>
+<div class="card inputs">
+    <h2>5 · Fine-tuning <span style="text-transform:none;letter-spacing:0;font-weight:400">— optional, and the only thing here that is not inference</span></h2>
+    <label style="display:flex;align-items:center;gap:7px;margin-bottom:14px">
+      <input type="checkbox" id="usePrep" style="width:auto;margin:0"> Price what it costs to get each model ready
+    </label>
+    <div class="grid g4 prepCol" style="display:none">
+      <div><label for="reprep">Redo the tuning every <span class="hint">months</span></label><input id="reprep" type="number" value="12" min="1"></div>
+      <div style="grid-column:span 3;align-self:end"><p class="note" style="margin:0 0 6px">Switching this on adds a <strong>Fine-tuning</strong> column to the candidates above: the one-off cost of the training run, the labelling, the eval harness and the week of someone's time. Inference is charged per request for as long as you serve the model; tuning is charged once and spread across the months until you would redo it. Put the same model in twice, tuned and untuned, to see whether it pays.</p></div>
+    </div>
+  </div>
+
+    <div id="assume" class="printonly"></div>
   <div id="out"></div>
 
   <p class="note" style="margin-top:26px">
@@ -463,7 +484,13 @@ function drawRows(){
   const api = $("useApi").checked, kvOn = $("useKv").checked, prepOn = $("usePrep").checked;
   document.querySelectorAll("th.kvCol").forEach(th => th.style.display = kvOn ? "table-cell" : "none");
   document.querySelectorAll("th.prepCol").forEach(th => th.style.display = prepOn ? "table-cell" : "none");
-  document.querySelectorAll("div.prepCol").forEach(d => d.style.display = prepOn ? "block" : "none");
+  document.querySelectorAll("div.prepCol").forEach(d => d.style.display = prepOn ? "grid" : "none");
+  // The band above the headers has to follow whichever columns are showing.
+  // Column order is speed, KV, fine-tuning, then the two rented prices, so the
+  // bands have to follow that order rather than lump them together.
+  $("gInf").colSpan = 1 + (kvOn?1:0);
+  $("gTune").style.display = prepOn ? "table-cell" : "none";
+  $("gRent").style.display = api ? "table-cell" : "none";
   document.querySelectorAll(".prepNote").forEach(n => n.style.display = prepOn ? "block" : "none");
   document.querySelectorAll(".kvNote").forEach(n => n.style.display = kvOn ? "block" : "none");
   document.querySelectorAll("th.apiCol").forEach(th => th.style.display = api ? "table-cell" : "none");
@@ -941,13 +968,12 @@ function render(){
       <td class="num">${r.totalGpu}</td>
       <td class="num">${(r.u*100).toFixed(0)}%${peaked?` · ${(r.uPeak*100).toFixed(0)}%`:""}</td>
       <td class="num">$${money(r.peak1k)}</td>
-      <td class="num"><strong>$${money(allIn ? r.all1k : r.true1k)}</strong></td>
       <td class="num">$${big(r.annual)}</td>
-      ${priced?`<td class="num">$${big(r.errAnnual)}<br><span style="font-size:11.5px;color:var(--muted)">${(r.errRate*100).toFixed(1)}% wrong</span></td>
-      <td class="num"><strong>$${big(r.total)}</strong></td>`:""}
+      ${priced?`<td class="num">$${big(r.errAnnual)}<br><span style="font-size:11.5px;color:var(--muted)">${(r.errRate*100).toFixed(1)}% wrong</span></td>`:""}
       ${prepped?`<td class="num">${r.prepAnnual? "$"+big(r.prepAnnual) : "—"}<br><span style="font-size:11.5px;color:var(--muted)">${r.prepAnnual? "$"+big(r.prep||0)+" once" : "as shipped"}</span></td>`:""}
-      ${prepped && !priced?`<td class="num"><strong>$${big(r.total)}</strong></td>`:""}
       ${api?`<td class="num">${r.apiAnnual? "$"+big(r.apiAnnual) : "—"}<br><span style="font-size:11.5px;color:var(--muted)">${r.apiAnnual? "$"+money(r.api1k)+"/1k" : "no price"}</span></td>`:""}
+      <td class="num"><strong>$${money(allIn ? r.all1k : r.true1k)}</strong></td>
+      <td class="num"><strong>$${big(r.total)}</strong></td>
     </tr>`).join("");
 
   const anyEst = res.some(r=>!r.measured);
@@ -968,15 +994,28 @@ function render(){
       <h2>The numbers</h2>
       <div style="overflow-x:auto">
       <table class="${[priced,api,prepped].filter(Boolean).length >= 2 ? "xwide" : (priced||api||prepped) ? "wide" : ""}">
-        <thead><tr>
+        <thead>
+        <tr class="grp">
+          <th></th>
+          <th class="num" colspan="2">Clears your bars</th>
+          <th class="num" colspan="3">Inference</th>
+          <th class="num" colspan="2">Cost of inference</th>
+          ${priced?'<th class="num">Errors</th>':""}
+          ${prepped?'<th class="num">Fine-tuning</th>':""}
+          ${api?'<th class="num">Renting</th>':""}
+          <th class="num" colspan="2">${allIn?"All in":"Total"}</th>
+        </tr>
+        <tr>
           <th>Model</th><th class="num">Quality</th><th class="num">Response</th>
-          <th class="num">Speed tok/s</th><th class="num">GPUs</th><th class="num">Used</th>
-          <th class="num">Flat out $/1k</th><th class="num">${allIn?"All-in $/1k":"Real $/1k"}</th>
-          <th class="num">${allIn?(shared?"Your hardware/yr":"Hardware/yr"):(shared?"Your share/yr":"Per year")}</th>
-          ${priced?'<th class="num">Errors/yr</th><th class="num">All in/yr</th>':""}
+          <th class="num">Speed tok/s</th><th class="num">GPUs</th>
+          <th class="num">${peaked?"Used · at peak":"Used"}</th>
+          <th class="num">Flat out $/1k</th>
+          <th class="num">${shared?"Your hardware/yr":"Hardware/yr"}</th>
+          ${priced?'<th class="num">Errors/yr</th>':""}
           ${prepped?'<th class="num">Fine-tuning/yr</th>':""}
-          ${prepped && !priced?'<th class="num">All in/yr</th>':""}
           ${api?'<th class="num">Rented/yr</th>':""}
+          <th class="num">${allIn?"All-in $/1k":"Real $/1k"}</th>
+          <th class="num">${allIn?"All in/yr":"Per year"}</th>
         </tr></thead>
         <tbody>${table}</tbody>
       </table></div>

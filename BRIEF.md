@@ -12,12 +12,21 @@ It is deliberately one file with no build step, no dependencies, and no network 
 
 ## What this measures
 
-Everything on the page is the cost of **serving** a model: hardware, power,
-utilisation, peaks, errors in production, renting the same model instead. The one
-exception is the fine-tuning column, which is the cost of **getting a model
-ready** — the training run, the labelling, the eval harness, someone's week. The
-two are kept apart because they behave differently: serving recurs whether or not
-anyone touches the model, and tuning recurs only because models and data drift.
+Two phases, kept apart everywhere they appear.
+
+**Inference** — running the model in production — is sections 1 to 4 and most of
+the results: hardware, power, utilisation, peaks, errors in production, renting
+the same model instead. It recurs with every request, for as long as the service
+exists.
+
+**Fine-tuning** — getting a model ready — is section 5 and one column: the
+training run, the labelling, the eval harness, someone's week. It is charged once
+and spread across the months until it would be redone.
+
+The distinction is structural, not a matter of reading carefully: fine-tuning has
+its own numbered section, and both tables carry a band above the headers naming
+which phase each column belongs to. If a column moves, that band moves with it —
+the check below catches a band that has drifted off its columns.
 
 ## Rules that must not break
 
