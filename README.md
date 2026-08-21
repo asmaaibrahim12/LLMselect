@@ -7,6 +7,10 @@ You enter what the job needs, what your GPUs cost, and how each candidate scored
 on **your own** graded test set. It rules out anything that misses your quality
 or latency bar, ranks what is left by real cost, and shows the reasoning.
 
+It opens as a worked example and says so: the scores that ship with the file are
+placeholders, and the verdict is labelled an example until you have entered
+something of your own.
+
 **[Open the hosted copy](https://claude.ai/code/artifact/dd24be70-ac72-4072-8c5c-ce3d2212551d)** ·
 or download [`model-picker.html`](model-picker.html) and double-click it.
 

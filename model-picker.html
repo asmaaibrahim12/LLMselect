@@ -244,10 +244,7 @@
     </div>
   </div>
 
-  <div id="assume" class="printonly"></div>
-  <div id="out"></div>
-
-  <p class="note inputs" style="margin:26px 0 12px">The answer above comes from what you enter below, and updates as you type. It ranks the models that actually clear your quality and latency bars, and prices each one at <em>your</em> volume — including the capacity you pay for and do not use. The scores are yours to supply: no benchmark ships with this.</p>
+  <p class="note inputs" style="margin:0 0 18px">Fill these in and the answer builds underneath. It ranks the models that clear your quality and latency bars, and prices each at <em>your</em> volume — including the capacity you pay for and do not use. The scores are yours to supply: no benchmark ships with this.</p>
 
   <div class="card inputs">
     <h2>1 · The job</h2>
@@ -353,6 +350,9 @@
       <div style="grid-column:span 2;align-self:end"><p class="note" style="margin:0 0 6px">Everything sharing the box is assumed to run the same model on the same deployment. Cost is split by how much of the capacity each side actually consumes, so your share falls as the box fills up. If the other work needs a different model, it needs a different box and this will flatter you.</p></div>
     </div>
   </div>
+
+  <div id="assume" class="printonly"></div>
+  <div id="out"></div>
 
   <p class="note" style="margin-top:26px">
     Estimated speeds assume the model is memory-bandwidth-bound during generation, which is the usual case, with batching gains that flatten as concurrency rises. VRAM figures cover weights plus roughly 20% runtime overhead and exclude the KV cache, which grows with concurrency and context length — so treat a model that only just fits as one that doesn't. Nothing here is a substitute for running the thing on your own box for an afternoon.
@@ -900,10 +900,11 @@ function render(){
         : `takes ${cheaper.respSec.toFixed(1)}s to answer, past your ${maxSec}s limit`;
       why += ` ${esc(cheaper.name)} would be cheaper still, but it ${reason}.`;
     }
-    verdict = `<div class="verdict">
-      <div class="kicker">Recommended</div>
+    verdict = `<div class="verdict"${touched?"":' style="border-left-color:var(--warn)"'}>
+      <div class="kicker">${touched?"Recommended":"Example — not your numbers yet"}</div>
       <div class="pick">${esc(win.name)}</div>
       <p class="why">${why}</p>
+      ${touched?"":`<div class="callout" style="background:color-mix(in srgb,var(--warn) 16%,transparent)"><strong>These are example figures.</strong> The scores above are placeholders that ship with the file — nobody has measured them, least of all on your work. Put your own graded results in section 3 and your own volume and hardware in sections 1 and 2, and this becomes a recommendation. Until then it is a worked example showing what the tool does with numbers.</div>`}
       <div class="tiles">
         <div class="tile"><div class="k">${allIn?"All-in cost":"Real cost"}</div><div class="v">$${money(allIn?win.all1k:win.true1k)}</div><div class="n">per 1,000 requests${allIn?` — $${money(win.true1k)} of hardware, the rest wrong answers`:""}</div></div>
         <div class="tile"><div class="k">If it ran flat out</div><div class="v">$${money(win.peak1k)}</div><div class="n">per 1,000 — the number calculators quote</div></div>
@@ -999,7 +1000,7 @@ function render(){
   // The sticky line carries the answer down the page while the inputs that
   // produced it are being edited.
   if(win){
-    $("stickyPick").innerHTML = `<b>${esc(win.name)}</b>`;
+    $("stickyPick").innerHTML = `<b>${esc(win.name)}</b>${touched?"":' <span style="font-weight:400;color:var(--muted)">· example</span>'}`;
     $("stickyCost").textContent = `$${money(priced ? win.all1k : win.true1k)} per 1,000 · `
       + `${win.score}% · ${win.respSec.toFixed(1)}s · ${win.totalGpu} GPU${win.totalGpu===1?"":"s"}`;
   } else {
@@ -1007,6 +1008,7 @@ function render(){
     $("stickyCost").textContent = "";
   }
 
+  syncSticky();
   document.querySelectorAll("[data-tip]").forEach(el=>{
     el.onmousemove = e => {
       const t = $("tip"), [h,b] = el.dataset.tip.split("|");
@@ -1029,6 +1031,12 @@ $("theme").onclick = () => {
 ["volMonth","outTok","qBar","maxSec","errCost","inTok","peakRatio","reprep","gpuPrice","life","kwh","conc",
  "ovh","wacc","pue","idle","uptime","vram","bw","tdp","tflops","cacheShare","cachePrice"]
   .forEach(id => $(id).oninput = render);
+// One touch of anything - a field, a toggle, a candidate row - and this stops
+// being the shipped example.
+["input","change"].forEach(ev => document.addEventListener(ev, e => {
+  if(!touched && e.target.closest(".inputs")){ touched = true; render(); }
+}, true));
+
 $("useApi").onchange = () => { drawRows(); render(); };
 $("useKv").onchange = () => { drawRows(); render(); };
 $("usePrep").onchange = () => { drawRows(); render(); };
@@ -1050,6 +1058,10 @@ const FIELDS = ["volMonth","outTok","qBar","maxSec","gpu","gpuPrice","life","kwh
 // written before a field existed is padded from this, so adding a field can
 // never orphan the links already sent to colleagues - which hand-maintained
 // per-version tables did, quietly, the moment one was forgotten.
+// The scores this file ships with are placeholders, so until someone has
+// changed something the verdict is an example rather than a recommendation -
+// and it says which of the two it is.
+let touched = false;
 let SHIPPED = null;
 const MIN_FIELDS = 15;      // the shortest format ever written
 // encodeURIComponent leaves ~ alone, and ~ is our field separator inside a model.
@@ -1114,6 +1126,7 @@ function applyState(hash){
     if(models.some(m=>!m) || !models.length) return false;
   }
 
+  touched = true;                            // a link is somebody's own scenario
   FIELDS.forEach((id,i) => { $(id).value = vals[i]; });
   const flags = parts.a || "";
   $("useApi").checked   = flags[0] === "1";
@@ -1167,12 +1180,17 @@ $("share").onclick = e => { if(e.target === $("share")) $("share").classList.rem
 addEventListener("keydown", e => { if(e.key === "Escape") $("share").classList.remove("on"); });
 addEventListener("hashchange", () => { if(location.hash.length>1) applyState(location.hash); });
 
-// Show the sticky line only once the verdict itself has scrolled away.
-addEventListener("scroll", () => {
+// The answer sits below the form now, so the sticky line exists to carry it
+// back up: it shows whenever the verdict itself is off screen, in either
+// direction, and disappears the moment you can see the real thing.
+function syncSticky(){
   const v = document.querySelector("#out .verdict");
-  const gone = v ? v.getBoundingClientRect().bottom < 8 : false;
-  $("sticky").classList.toggle("on", gone);
-}, {passive:true});
+  if(!v){ $("sticky").classList.remove("on"); return; }
+  const r = v.getBoundingClientRect();
+  $("sticky").classList.toggle("on", r.top > innerHeight - 40 || r.bottom < 8);
+}
+addEventListener("scroll", syncSticky, {passive:true});
+addEventListener("resize", syncSticky, {passive:true});
 
 buildTask(); buildGpu(); drawRows();
 SHIPPED = FIELDS.map(id => $(id).value);   // before any link touches the form
