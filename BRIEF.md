@@ -10,6 +10,15 @@ A single self-contained HTML page that helps a team decide which open-weights LL
 
 It is deliberately one file with no build step, no dependencies, and no network calls. A startup CTO should be able to email it to a colleague who double-clicks it. Filled-in scenarios travel as links; the page prints to one side of A4 for the deck.
 
+## What this measures
+
+Everything on the page is the cost of **serving** a model: hardware, power,
+utilisation, peaks, errors in production, renting the same model instead. The one
+exception is the fine-tuning column, which is the cost of **getting a model
+ready** — the training run, the labelling, the eval harness, someone's week. The
+two are kept apart because they behave differently: serving recurs whether or not
+anyone touches the model, and tuning recurs only because models and data drift.
+
 ## Rules that must not break
 
 1. **One file.** No npm, no bundler, no CDN links, no fonts fetched at runtime. If a change needs a library, it is the wrong change.
@@ -73,6 +82,9 @@ With the shipped defaults — 1,000,000 requests/month, 500 input and 250 output
 | Sensitivity | not stable — Qwen2.5 14B and Kimi K2.6 split the eight combinations |
 | Sharing on, 3,000,000 other requests/month | real cost ~$0.272 per 1k, you carry about a quarter of the box |
 | At 200,000,000 on flat traffic | Qwen2.5 14B wins on cost — $324.7k on 24 GPUs against Kimi K2.6's $432.2k on 32 — because routing a token between eight GPUs is not free |
+| Fine-tuning off by default | the table shows serving only, and says so |
+| Fine-tuning on, $60,000 once on the small model at 200M requests | it wins — $40.5k a year to serve plus $60.0k to keep tuned, against $324.7k for the best model served untouched |
+| Same at 1M requests | it loses — the tuning would have to buy $59.9k a year of quality to be worth doing |
 | Task presets | picking Code completion (2s bar) rules Qwen2.5 14B out at 6.9s and moves the recommendation to Kimi K2.6; picking Chat assistant restores every figure above |
 
 Then exercise each correction in turn and confirm it bites:

@@ -106,6 +106,17 @@
       var(--accent) 0 5px, color-mix(in srgb,var(--accent) 45%,var(--surface-1)) 5px 10px);
     margin-left:2px;
   }
+  /* Same hue, the other diagonal: preparation is money on the same scale as
+     the rest, and is told apart by direction rather than by a new colour. */
+  .bar.prep{
+    background:repeating-linear-gradient(45deg,
+      var(--accent) 0 5px, color-mix(in srgb,var(--accent) 25%,var(--surface-1)) 5px 10px);
+    margin-left:2px;
+  }
+  .bar.out.prep{background:repeating-linear-gradient(45deg,
+      var(--muted) 0 5px, color-mix(in srgb,var(--muted) 25%,var(--surface-1)) 5px 10px)}
+  .legend i.pr{background:repeating-linear-gradient(45deg,
+      var(--accent) 0 4px, color-mix(in srgb,var(--accent) 25%,var(--surface-1)) 4px 8px)}
   .bar.out.err{background:repeating-linear-gradient(135deg,
       var(--muted) 0 5px, color-mix(in srgb,var(--muted) 45%,var(--surface-1)) 5px 10px)}
   .legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;font-size:12px;color:var(--ink-2)}
@@ -198,6 +209,13 @@
     #out table.wide th{padding-right:3px;font-size:7px}
     #out table.wide td span[style]{font-size:6.8px!important}
     #out table.wide .tag{font-size:6.8px;padding:1px 4px}
+    /* two or three of errors, renting and tuning together makes thirteen
+       columns; they only fit smaller still */
+    #out table.xwide{font-size:6.4px}
+    #out table.xwide td{padding-right:2px}
+    #out table.xwide th{padding-right:2px;font-size:6.2px}
+    #out table.xwide td span[style]{font-size:6px!important}
+    #out table.xwide .tag{font-size:6px;padding:1px 3px}
     #out table td span[style]{font-size:8px!important}
     #out [style*="overflow-x"]{overflow:visible!important}
     thead{display:table-header-group}
@@ -218,7 +236,7 @@
   <div class="top">
     <div>
       <h1>Which model should we run?</h1>
-      <p class="sub">What to run on your own GPUs, and what it will really cost.</p>
+      <p class="sub">What to run on your own GPUs, and what serving it will really cost.</p>
     </div>
     <div class="topbtns">
       <button class="btn" id="copy" title="Copy a link that reopens this exact scenario">Copy link</button>
@@ -287,6 +305,11 @@
       <label style="display:flex;align-items:center;gap:7px;margin:0 0 6px">
         <input type="checkbox" id="useKv" style="width:auto;margin:0"> Count the KV cache in VRAM
       </label>
+      <label style="display:flex;align-items:center;gap:7px;margin:0 0 6px">
+        <input type="checkbox" id="usePrep" style="width:auto;margin:0"> Price the fine-tuning, not just the serving
+      </label>
+      <div class="prepCol" style="display:none"><label for="reprep">Redo the tuning every <span class="hint">months</span></label>
+        <input id="reprep" type="number" value="12" min="1" style="width:150px"></div>
       <div class="apiCol" style="display:none"><label for="cacheShare">Input served from cache <span class="hint">%</span></label>
         <input id="cacheShare" type="number" value="0" min="0" max="100" style="width:130px"></div>
       <div class="apiCol" style="display:none"><label for="cachePrice">Cache read price <span class="hint">% of input price</span></label>
@@ -303,6 +326,7 @@
         <th class="num" style="width:15%">Your score (%)</th>
         <th class="num" style="width:16%">Speed (tok/s)</th>
         <th class="num kvCol" style="width:12%;display:none">KV MB/token</th>
+        <th class="num prepCol" style="width:13%;display:none">Fine-tune $ once</th>
         <th class="num apiCol" style="width:13%;display:none">API $/M in</th>
         <th class="num apiCol" style="width:13%;display:none">API $/M out</th>
         <th style="width:5%"></th>
@@ -312,6 +336,7 @@
     </div>
     <button class="btn" id="add" style="margin-top:14px">+ Add a model</button>
     <p class="note apiNote" style="display:none"><strong>API prices are yours to enter.</strong> Nothing is hardcoded here — published prices change monthly and any figure baked into this file would be wrong by the time you read it. Take the two numbers off the provider's pricing page for the model you would actually rent. The comparison covers tokens only: egress, rate-limit headroom and the fact that your data leaves the building are not priced.</p>
+    <p class="note prepNote" style="display:none"><strong>Everything else on this page is the cost of serving a model. This column is the cost of getting one ready:</strong> the training run, the labelling, the evaluation harness, the week of someone's time. It is a one-off, so it is spread across the months until you would do it again — put a model in as shipped by leaving it at zero, and put the same model in twice, once tuned and once not, to see whether the tuning pays for itself. The score beside it should be the score <em>after</em> tuning.</p>
     <p class="note kvNote" style="display:none"><strong>KV MB/token</strong> is the attention cache each sequence carries, and it is what makes high concurrency and long context expensive in VRAM: at your settings it is multiplied by concurrency and by input plus output length. Take it from the model card — 2 × layers × kv-heads × head-dim × bytes, in megabytes. Left empty it is not counted at all, and the GPU count below is a floor rather than an answer.</p>
     <p class="note"><strong>Total</strong> is every parameter the weights contain; <strong>active</strong> is how many are used per token. For a dense model they are the same number. For a mixture-of-experts they are not, and the difference decides everything: the VRAM bill — and so the GPU count — follows the total, while speed follows the active part. A model can therefore need eight GPUs to hold and still answer quickly.</p>
     <p class="note"><strong>Your score</strong> is the model's result on your graded examples for <em>this</em> job — not a public benchmark, and not its score on a different task. A model that summarises well may write poor code, and the ranking below is only as good as the match between your test set and the work you picked above. <strong>Speed</strong> auto-fills with a rough estimate from memory bandwidth; it is a shortlisting guess that can be wrong by half. Type a measured number over it as soon as you have one, and it will be marked as measured.</p>
@@ -435,8 +460,11 @@ function buildGpu(){
 }
 
 function drawRows(){
-  const api = $("useApi").checked, kvOn = $("useKv").checked;
+  const api = $("useApi").checked, kvOn = $("useKv").checked, prepOn = $("usePrep").checked;
   document.querySelectorAll("th.kvCol").forEach(th => th.style.display = kvOn ? "table-cell" : "none");
+  document.querySelectorAll("th.prepCol").forEach(th => th.style.display = prepOn ? "table-cell" : "none");
+  document.querySelectorAll("div.prepCol").forEach(d => d.style.display = prepOn ? "block" : "none");
+  document.querySelectorAll(".prepNote").forEach(n => n.style.display = prepOn ? "block" : "none");
   document.querySelectorAll(".kvNote").forEach(n => n.style.display = kvOn ? "block" : "none");
   document.querySelectorAll("th.apiCol").forEach(th => th.style.display = api ? "table-cell" : "none");
   document.querySelectorAll("div.apiCol").forEach(d => d.style.display = api ? "block" : "none");
@@ -450,6 +478,7 @@ function drawRows(){
       <td><input aria-label="Your score on your own test set, percent" data-i="${i}" data-f="score" type="number" min="0" max="100" step="0.1" value="${r.score}"></td>
       <td><input aria-label="Measured speed in tokens per second" data-i="${i}" data-f="tps" type="number" min="1" placeholder="estimate" value="${r.tps ?? ""}"></td>
       <td class="kvCol" style="display:${kvOn?"table-cell":"none"}"><input aria-label="KV cache megabytes per token" data-i="${i}" data-f="kv" type="number" min="0" step="0.01" placeholder="from the model card" value="${r.kv ?? ""}"></td>
+      <td class="prepCol" style="display:${prepOn?"table-cell":"none"}"><input aria-label="One-off cost of fine-tuning this model" data-i="${i}" data-f="prep" type="number" min="0" step="100" placeholder="0 = as shipped" value="${r.prep ?? ""}"></td>
       <td class="apiCol" style="display:${api?"table-cell":"none"}"><input aria-label="API input price per million tokens" data-i="${i}" data-f="ai" type="number" min="0" step="0.01" value="${r.ai ?? 0}"></td>
       <td class="apiCol" style="display:${api?"table-cell":"none"}"><input aria-label="API output price per million tokens" data-i="${i}" data-f="ao" type="number" min="0" step="0.01" value="${r.ao ?? 0}"></td>
       <td><button class="btn x" data-del="${i}" title="Remove" aria-label="Remove ${esc(r.name)}">×</button></td>
@@ -460,6 +489,7 @@ function drawRows(){
       if(f==="name") r.name = el.value;
       else if(f==="tps") r.tps = el.value==="" ? null : parseFloat(el.value);
       else if(f==="kv")  r.kv  = el.value==="" ? null : parseFloat(el.value);
+      else if(f==="prep") r.prep = el.value==="" ? null : parseFloat(el.value);
       else if(f==="act") r.act = parseFloat(el.value);
       else r[f] = parseFloat(el.value);
       render();
@@ -489,6 +519,8 @@ function compute(mult){
   const errCost  = Math.max(0, num("errCost"));
   const api      = $("useApi").checked;
   const shared   = $("useShare").checked;
+  const prepOn   = $("usePrep").checked;
+  const reprep   = Math.max(1, num("reprep"));
   const otherReq = shared ? num("otherReq")*12 : 0;
   const otherOut = num("otherTok");
 
@@ -561,7 +593,10 @@ function compute(mult){
     // only term that rewards a better model for being better.
     const errRate  = Math.max(0, (100-r.score)/100);
     const errAnnual= volume*errRate*errCost;
-    const total    = annual + errAnnual;
+    // Getting a model ready is not a serving cost, so it is kept apart and only
+    // spread across the months until the tuning would be redone.
+    const prepAnnual= prepOn ? (r.prep || 0)*(12/reprep) : 0;
+    const total    = annual + errAnnual + prepAnnual;
     const all1k    = 1000*total/volume;
 
     // Renting the same model: tokens only, at the prices the user typed.
@@ -579,7 +614,7 @@ function compute(mult){
     const okLat    = respSec <= maxSec;
     return {...r, weights, readPer, vramNeed, kvGb, gpus, totalGpu, replicas, agg, measured, estAgg,
             respSec, rps, u, uPeak, serviceSec, prefillAgg, peak1k, true1k, annual, errRate, errAnnual, total, all1k,
-            apiAnnual, api1k, apiTotal, boxAnnual, shareFrac, okQual, okLat,
+            apiAnnual, api1k, apiTotal, boxAnnual, shareFrac, prepAnnual, okQual, okLat,
             feasible: okQual && okLat, gap: true1k/peak1k};
   });
 }
@@ -773,6 +808,26 @@ function shareCallout(win){
     Splitting by consumption means the idle time is split too, so filling the box is what makes it cheap: the fuller it runs, the less of it anyone is paying for nothing.</div>`;
 }
 
+// Fine-tuning a small model against serving a bigger one is the trade the
+// column exists to settle, so it is stated rather than left in the table.
+function prepCallout(win, feas){
+  const tuned  = feas.filter(r => r.prepAnnual > 0);
+  const asShip = feas.filter(r => r.prepAnnual === 0).sort((a,b)=>a.total-b.total)[0];
+  if(!tuned.length) return "";
+  const months = num("reprep");
+  if(win.prepAnnual > 0){
+    const vs = asShip && asShip !== win
+      ? ` The best model you could serve untouched is ${esc(asShip.name)} at ${'$'+big(asShip.total)} a year, so tuning ${asShip.total > win.total ? `comes out ${'$'+big(asShip.total-win.total)} a year ahead of` : `costs you ${'$'+big(win.total-asShip.total)} more than`} leaving it alone.`
+      : "";
+    return `<div class="callout"><strong>This answer includes the fine-tuning.</strong>
+      ${esc(win.name)} costs ${'$'+big(win.annual)} a year to serve and ${'$'+big(win.prepAnnual)} a year to keep tuned — a one-off of ${'$'+big(win.prep||0)} spread over the ${months} months until you would redo it.${vs}
+      Serving cost recurs whether or not anyone touches the model; tuning cost recurs only because models and data drift.</div>`;
+  }
+  const best = tuned.sort((a,b)=>a.total-b.total)[0];
+  return `<div class="callout"><strong>Fine-tuning does not pay here.</strong>
+    ${esc(win.name)} as shipped costs ${'$'+big(win.total)} a year all in, against ${'$'+big(best.total)} for ${esc(best.name)} with its tuning priced in. The tuning would have to buy ${'$'+big(best.total-win.total)} a year of quality or speed to be worth doing, on top of the ${months} months of shelf life it gets before you would do it again.</div>`;
+}
+
 function render(){
   const gaps = missingInputs();
   if(gaps.length){
@@ -795,6 +850,8 @@ function render(){
   const api    = $("useApi").checked;
   const shared = $("useShare").checked;
   const peaked = num("peakRatio") > 1;      // no point in two identical columns
+  const prepped = $("usePrep").checked && res.some(r=>r.prepAnnual > 0);
+  const allIn   = priced || prepped;        // is the headline figure more than hardware?
   const maxA = Math.max(...res.map(r=>r.total), 1);
 
   let verdict;
@@ -808,8 +865,8 @@ function render(){
     const fix = missL && !missQ
       ? "Everything on the list is good enough; nothing is fast enough. Raise the concurrency, split the work across more GPUs, or shorten the responses before adding a bigger model."
       : missQ && !missL
-      ? "Everything on the list is fast enough; nothing is good enough. Try a fine-tune or retrieval on the cheapest candidate before reaching for a larger model."
-      : "Either the bar is set higher than this task really needs, or the shortlist needs a different model, a fine-tune, or better retrieval before cost is worth discussing.";
+      ? "Everything on the list is fast enough; nothing is good enough. Try a fine-tune or retrieval on the cheapest candidate before reaching for a larger model — and price the tuning with the switch in section 3, so the comparison is honest about what that costs."
+      : "Either the bar is set higher than this task really needs, or the shortlist needs a different model, a fine-tune, or better retrieval before cost is worth discussing. If a fine-tune is the answer, price it: the switch in section 3 puts what it costs to get a model ready next to what it costs to serve it.";
     verdict = `<div class="verdict" style="border-left-color:var(--crit)">
       <div class="kicker">No candidate qualifies</div>
       <div class="pick">Nothing clears your bar</div>
@@ -848,10 +905,11 @@ function render(){
       <div class="pick">${esc(win.name)}</div>
       <p class="why">${why}</p>
       <div class="tiles">
-        <div class="tile"><div class="k">${priced?"All-in cost":"Real cost"}</div><div class="v">$${money(priced?win.all1k:win.true1k)}</div><div class="n">per 1,000 requests${priced?` — $${money(win.true1k)} of hardware, the rest wrong answers`:""}</div></div>
+        <div class="tile"><div class="k">${allIn?"All-in cost":"Real cost"}</div><div class="v">$${money(allIn?win.all1k:win.true1k)}</div><div class="n">per 1,000 requests${allIn?` — $${money(win.true1k)} of hardware, the rest wrong answers`:""}</div></div>
         <div class="tile"><div class="k">If it ran flat out</div><div class="v">$${money(win.peak1k)}</div><div class="n">per 1,000 — the number calculators quote</div></div>
         <div class="tile"><div class="k">Idle penalty</div><div class="v">${win.gap.toFixed(1)}×</div><div class="n">what you pay above the flat-out price, at ${(win.u*100).toFixed(0)}% used</div></div>
       </div>
+      ${prepped ? prepCallout(win, feas) : ""}
       ${shared ? shareCallout(win) : ""}
       ${api ? apiCallout(win, priced) : ""}
       ${priced ? errCallout(win, feas) : shared ? "" : win.u<0.25 ? `<div class="callout"><strong>Cost is not your deciding factor here.</strong> At ${(win.u*100).toFixed(0)}% utilisation the hardware is idle ${((1-win.u)*100).toFixed(0)}% of the time, so nearly every model on this list costs about the same to run — you are paying for the box, not the tokens. Two things follow. Pick on quality and latency, not price. And before buying anything, ask whether this workload justifies dedicated hardware at all — section 4 will show what putting your other work on the same box does to this figure.</div>`
@@ -865,7 +923,9 @@ function render(){
       <div class="track"><div class="bar ${r.feasible?"":"out"}" style="width:${Math.max(1.5,r.annual/maxA*100)}%"
         data-tip="${esc(r.name)}|${r.feasible?"Qualifies":"Does not qualify"} · $${money(r.true1k)} per 1k requests · ${r.totalGpu} GPU${r.totalGpu===1?"":"s"} at ${(r.u*100).toFixed(0)}% used"></div>${
         priced?`<div class="bar err ${r.feasible?"":"out"}" style="width:${r.errAnnual/maxA*100}%"
-        data-tip="${esc(r.name)} — errors|${(r.errRate*100).toFixed(1)}% of answers wrong · $${big(r.errAnnual)} a year at $${money(num("errCost"))} each"></div>`:""}</div>
+        data-tip="${esc(r.name)} — errors|${(r.errRate*100).toFixed(1)}% of answers wrong · $${big(r.errAnnual)} a year at $${money(num("errCost"))} each"></div>`:""}${
+        prepped?`<div class="bar prep ${r.feasible?"":"out"}" style="width:${r.prepAnnual/maxA*100}%"
+        data-tip="${esc(r.name)} — fine-tuning|$${big(r.prepAnnual)} a year — a one-off of $${big(r.prep||0)} spread over ${num("reprep")} months"></div>`:""}</div>
       <div class="vl">$${big(r.total)}${r.feasible?"":' <span class="tag no">out</span>'}</div>
     </div>`).join("");
 
@@ -880,10 +940,12 @@ function render(){
       <td class="num">${r.totalGpu}</td>
       <td class="num">${(r.u*100).toFixed(0)}%${peaked?` · ${(r.uPeak*100).toFixed(0)}%`:""}</td>
       <td class="num">$${money(r.peak1k)}</td>
-      <td class="num"><strong>$${money(priced ? r.all1k : r.true1k)}</strong></td>
+      <td class="num"><strong>$${money(allIn ? r.all1k : r.true1k)}</strong></td>
       <td class="num">$${big(r.annual)}</td>
       ${priced?`<td class="num">$${big(r.errAnnual)}<br><span style="font-size:11.5px;color:var(--muted)">${(r.errRate*100).toFixed(1)}% wrong</span></td>
       <td class="num"><strong>$${big(r.total)}</strong></td>`:""}
+      ${prepped?`<td class="num">${r.prepAnnual? "$"+big(r.prepAnnual) : "—"}<br><span style="font-size:11.5px;color:var(--muted)">${r.prepAnnual? "$"+big(r.prep||0)+" once" : "as shipped"}</span></td>`:""}
+      ${prepped && !priced?`<td class="num"><strong>$${big(r.total)}</strong></td>`:""}
       ${api?`<td class="num">${r.apiAnnual? "$"+big(r.apiAnnual) : "—"}<br><span style="font-size:11.5px;color:var(--muted)">${r.apiAnnual? "$"+money(r.api1k)+"/1k" : "no price"}</span></td>`:""}
     </tr>`).join("");
 
@@ -896,6 +958,7 @@ function render(){
       <div class="legend">
         <span><i class="hw"></i>Hardware</span>
         ${priced?'<span><i class="er"></i>Wrong answers</span>':""}
+        ${prepped?'<span><i class="pr"></i>Fine-tuning, spread over its life</span>':""}
         <span><i class="no"></i>Ruled out — misses your quality or speed bar</span>
       </div>
       <p class="note">Ruled-out models are shown so you can see what you are turning down.</p>
@@ -903,18 +966,20 @@ function render(){
     <div class="card">
       <h2>The numbers</h2>
       <div style="overflow-x:auto">
-      <table class="${priced || api ? "wide" : ""}">
+      <table class="${[priced,api,prepped].filter(Boolean).length >= 2 ? "xwide" : (priced||api||prepped) ? "wide" : ""}">
         <thead><tr>
           <th>Model</th><th class="num">Quality</th><th class="num">Response</th>
           <th class="num">Speed tok/s</th><th class="num">GPUs</th><th class="num">Used</th>
-          <th class="num">Flat out $/1k</th><th class="num">${priced?"All-in $/1k":"Real $/1k"}</th>
-          <th class="num">${priced?(shared?"Your hardware/yr":"Hardware/yr"):(shared?"Your share/yr":"Per year")}</th>
+          <th class="num">Flat out $/1k</th><th class="num">${allIn?"All-in $/1k":"Real $/1k"}</th>
+          <th class="num">${allIn?(shared?"Your hardware/yr":"Hardware/yr"):(shared?"Your share/yr":"Per year")}</th>
           ${priced?'<th class="num">Errors/yr</th><th class="num">All in/yr</th>':""}
+          ${prepped?'<th class="num">Fine-tuning/yr</th>':""}
+          ${prepped && !priced?'<th class="num">All in/yr</th>':""}
           ${api?'<th class="num">Rented/yr</th>':""}
         </tr></thead>
         <tbody>${table}</tbody>
       </table></div>
-      <p class="note"><strong>Flat out $/1k</strong> assumes the GPU never idles — the figure every online calculator quotes. <strong>${priced?"All-in $/1k":"Real $/1k"}</strong> is what you will actually pay at your volume${priced?", errors included":""}. The gap between them is idle capacity, and on-premise it is usually the largest line in the whole comparison.${priced?" Errors/yr prices every wrong answer at what you said one costs; it is the only column that pays a better model back for being better.":""}</p>
+      <p class="note"><strong>Flat out $/1k</strong> assumes the GPU never idles — the figure every online calculator quotes. <strong>${allIn?"All-in $/1k":"Real $/1k"}</strong> is what you will actually pay at your volume${allIn?`, ${priced&&prepped?"errors and fine-tuning":priced?"errors":"fine-tuning"} included`:""}. The gap between them is idle capacity, and on-premise it is usually the largest line in the whole comparison.${priced?" Errors/yr prices every wrong answer at what you said one costs; it is the only column that pays a better model back for being better.":""}</p>
       ${win && win.uPeak > 0.8 ? `<div class="warnbox"><strong>At the busiest hour this runs at ${(win.uPeak*100).toFixed(0)}% of capacity.</strong> The response times above are service times — the work itself — and exclude waiting for a free slot. Waiting grows with 1/(1&minus;load): at ${(win.uPeak*100).toFixed(0)}% full that is roughly ${(1/(1-Math.min(0.99,win.uPeak))).toFixed(0)}× the service time in a simple queue. Continuous batching is kinder than that, but the direction is not in doubt, and nobody holds an interactive ${maxSec}s promise at this load. Raise the busiest-hour figure, or buy the headroom deliberately.</div>` : ""}
       ${anyEst?`<div class="warnbox"><strong>Some speeds are estimates.</strong> They come from memory bandwidth and can be out by half in either direction, which moves cost by the same factor. Run one model on your own hardware for an afternoon, type the real number in, and the ranking here becomes something you can defend in a board meeting.</div>`:""}
     </div>` + sensCard(win);
@@ -961,11 +1026,12 @@ $("theme").onclick = () => {
     (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
   document.documentElement.dataset.theme = showing==="dark" ? "light" : "dark";
 };
-["volMonth","outTok","qBar","maxSec","errCost","inTok","peakRatio","gpuPrice","life","kwh","conc",
+["volMonth","outTok","qBar","maxSec","errCost","inTok","peakRatio","reprep","gpuPrice","life","kwh","conc",
  "ovh","wacc","pue","idle","uptime","vram","bw","tdp","tflops","cacheShare","cachePrice"]
   .forEach(id => $(id).oninput = render);
 $("useApi").onchange = () => { drawRows(); render(); };
 $("useKv").onchange = () => { drawRows(); render(); };
+$("usePrep").onchange = () => { drawRows(); render(); };
 $("useShare").onchange = () => { $("shareJob").style.display = $("useShare").checked ? "grid" : "none"; render(); };
 ["otherReq","otherTok"].forEach(id => $(id).oninput = render);
 
@@ -976,7 +1042,7 @@ $("useShare").onchange = () => { $("shareJob").style.display = $("useShare").che
 const FIELDS = ["volMonth","outTok","qBar","maxSec","gpu","gpuPrice","life","kwh",
                 "conc","ovh","pue","idle","vram","bw","tdp","errCost","inTok",
                 "otherReq","otherTok","peakRatio","wacc","uptime","tflops",
-                "cacheShare","cachePrice","task"];
+                "cacheShare","cachePrice","task","reprep"];
 // Older links are still good links. v1 predates the cost of a wrong answer and
 // v2 the cloud comparison; both are read as those features switched off, which
 // is what they meant when they were written.
@@ -992,9 +1058,9 @@ const encName = s => encodeURIComponent(s).replace(/~/g,"%7E");
 function encodeState(){
   const f = FIELDS.map(id => $(id).value).join(",");
   const m = rows.map(r => [encName(r.name), r.p, r.q, r.score, r.tps ?? "", r.ai||0, r.ao||0,
-                           r.act ?? r.p, r.kv ?? ""].join("~")).join("|");
+                           r.act ?? r.p, r.kv ?? "", r.prep ?? ""].join("~")).join("|");
   return "v=6&a=" + ($("useApi").checked?1:0) + ($("useShare").checked?1:0)
-                + ($("useKv").checked?1:0) + "&f=" + f + "&m=" + m;
+                + ($("useKv").checked?1:0) + ($("usePrep").checked?1:0) + "&f=" + f + "&m=" + m;
 }
 
 function shareUrl(){
@@ -1029,7 +1095,8 @@ function applyState(hash){
       if(c.length === 5) c.push("0","0");            // pre-v3 rows carry no prices
       if(c.length === 7) c.push(c[1]);               // pre-v5 rows are all dense
       if(c.length === 8) c.push("");                 // pre-v6 rows have no KV figure
-      if(c.length !== 9) return null;
+      if(c.length === 9) c.push("");                 // nor a fine-tuning cost
+      if(c.length !== 10) return null;
       const p = parseFloat(c[1]), q = parseInt(c[2],10), score = parseFloat(c[3]);
       if(!isFinite(p) || !isFinite(score) || !(q>=0 && q<PREC.length)) return null;
       const tps = c[4]==="" ? null : parseFloat(c[4]);
@@ -1039,8 +1106,10 @@ function applyState(hash){
       let name;
       try { name = decodeURIComponent(c[0]); } catch(e) { return null; }
       const kv = c[8]==="" ? null : parseFloat(c[8]);
+      const prep = c[9]==="" ? null : parseFloat(c[9]);
       if(kv !== null && !isFinite(kv)) return null;
-      return {name, p, act, q, score, tps, ai, ao, kv};
+      if(prep !== null && !isFinite(prep)) return null;
+      return {name, p, act, q, score, tps, ai, ao, kv, prep};
     });
     if(models.some(m=>!m) || !models.length) return false;
   }
@@ -1050,6 +1119,7 @@ function applyState(hash){
   $("useApi").checked   = flags[0] === "1";
   $("useShare").checked = flags[1] === "1";
   $("useKv").checked    = flags[2] === "1";   // absent in links written before it existed
+  $("usePrep").checked  = flags[3] === "1";
   $("shareJob").style.display = $("useShare").checked ? "grid" : "none";
   const gi = +vals[FIELDS.indexOf("gpu")];        // a GPU index we don't know -> Custom
   $("gpu").value = (gi >= 0 && gi < GPUS.length) ? gi : GPUS.length-1;

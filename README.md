@@ -79,6 +79,16 @@ prefill work of reading the prompt, and the rented figure accounts for cached
 input at whatever share and discount your provider gives you — the two
 corrections that used to push the answer toward owning.
 
+**Fine-tuning against serving, priced separately.** Every other figure here is
+what it costs to *serve* a model. Fine-tuning is what it costs to *get one
+ready*, and the two behave differently: serving recurs whether or not anyone
+touches the model, tuning recurs only because models and data drift. Switch it on
+and each candidate carries a one-off cost spread over the months until you would
+redo it — so the real question gets a real answer. On the shipped example, tuning
+a small model for $60,000 loses at a million requests a month, where it would
+have to buy $59.9k a year of quality to be worth it, and wins at 200 million,
+where it comes out $224.2k a year ahead of serving the best untouched model.
+
 **What sharing the box saves.** Put other workloads on the same hardware and the
 cost splits by consumed capacity. On the defaults, adding 3M requests a month of
 other work takes this workload from $1.06 to $0.272 per thousand. At low
